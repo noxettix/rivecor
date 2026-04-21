@@ -1,0 +1,488 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model companies {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  rut                String               @unique
+  name               String
+  industry           String?
+  address            String?
+  phone              String?
+  contactName        String?
+  contactEmail       String?
+  isActive           Boolean              @default(true)
+  createdAt          DateTime             @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime             @default(now()) @db.Timestamptz(6)
+  contracts          contracts[]
+  equipments         equipments[]
+  invoices           invoices[]
+  mechanic_companies mechanic_companies[]
+  quotes             quotes[]
+  users              users[]
+}
+
+model contracts {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  number            String              @unique
+  companyId         String              @db.Uuid
+  startDate         DateTime            @db.Timestamptz(6)
+  endDate           DateTime            @db.Timestamptz(6)
+  status            ContractStatus      @default(ACTIVE)
+  monthlyValue      Float?
+  notes             String?
+  createdAt         DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime            @default(now()) @db.Timestamptz(6)
+  companies         companies           @relation(fields: [companyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  invoices          invoices[]
+  maintenance_forms maintenance_forms[]
+  maintenances      maintenances[]
+}
+
+model equipments {
+  id                   String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId            String                 @db.Uuid
+  code                 String
+  name                 String
+  type                 EquipmentType
+  brand                String?
+  model                String?
+  year                 Int?
+  licensePlate         String?
+  location             String?
+  isActive             Boolean                @default(true)
+  createdAt            DateTime               @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime               @default(now()) @db.Timestamptz(6)
+  companies            companies              @relation(fields: [companyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  maintenance_forms    maintenance_forms[]
+  maintenance_requests maintenance_requests[]
+  tires                tires[]
+
+  @@index([companyId], map: "idx_equipments_company")
+}
+
+model invoice_items {
+  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  invoiceId     String          @db.Uuid
+  description   String
+  type          InvoiceItemType @default(SERVICE)
+  quantity      Float           @default(1)
+  unitPrice     Float
+  total         Float
+  maintenanceId String?         @db.Uuid
+  invoices      invoices        @relation(fields: [invoiceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  maintenances  maintenances?   @relation(fields: [maintenanceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model invoices {
+  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  number        String          @unique
+  companyId     String          @db.Uuid
+  contractId    String?         @db.Uuid
+  status        InvoiceStatus   @default(DRAFT)
+  periodStart   DateTime?       @db.Timestamptz(6)
+  periodEnd     DateTime?       @db.Timestamptz(6)
+  issueDate     DateTime        @default(now()) @db.Timestamptz(6)
+  dueDate       DateTime?       @db.Timestamptz(6)
+  subtotal      Float           @default(0)
+  taxRate       Float           @default(0.19)
+  taxAmount     Float           @default(0)
+  total         Float           @default(0)
+  notes         String?
+  sentTo        String?
+  sentAt        DateTime?       @db.Timestamptz(6)
+  paidAt        DateTime?       @db.Timestamptz(6)
+  createdById   String?         @db.Uuid
+  createdAt     DateTime        @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime        @default(now()) @db.Timestamptz(6)
+  invoice_items invoice_items[]
+  companies     companies       @relation(fields: [companyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  contracts     contracts?      @relation(fields: [contractId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users         users?          @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([companyId], map: "idx_invoices_company")
+  @@index([status], map: "idx_invoices_status")
+}
+
+model maintenance_forms {
+  id                     String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  equipmentId            String?                  @db.Uuid
+  mechanicId             String?                  @db.Uuid
+  contractId             String?                  @db.Uuid
+  requestId              String?                  @unique @db.Uuid
+  status                 FormStatus               @default(DRAFT)
+  type                   MaintenanceType?
+  plannedType            String?
+  performedAt            DateTime?                @db.Timestamptz(6)
+  scheduledAt            DateTime?                @db.Timestamptz(6)
+  nextScheduled          DateTime?                @db.Timestamptz(6)
+  observations           String?
+  notes                  String?
+  signedByClient         Boolean                  @default(false)
+  hoursSpent             Float?
+  laborCost              Float?
+  createdAt              DateTime                 @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime                 @default(now()) @db.Timestamptz(6)
+  contracts              contracts?               @relation(fields: [contractId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  equipments             equipments?              @relation(fields: [equipmentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  mechanics              mechanics?               @relation(fields: [mechanicId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  maintenance_requests   maintenance_requests?    @relation(fields: [requestId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  maintenance_tire_forms maintenance_tire_forms[]
+
+  @@index([equipmentId], map: "idx_forms_equipment")
+  @@index([mechanicId], map: "idx_forms_mechanic")
+  @@index([status], map: "idx_forms_status")
+}
+
+model maintenance_requests {
+  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  equipmentId       String             @db.Uuid
+  userId            String             @db.Uuid
+  type              MaintenanceType
+  priority          Priority           @default(NORMAL)
+  description       String?
+  status            RequestStatus      @default(PENDING)
+  scheduledAt       DateTime?          @db.Timestamptz(6)
+  createdAt         DateTime           @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime           @default(now()) @db.Timestamptz(6)
+  maintenance_forms maintenance_forms?
+  equipments        equipments         @relation(fields: [equipmentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users             users              @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  maintenances      maintenances?
+}
+
+model maintenance_tire_forms {
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  maintenanceFormId String            @db.Uuid
+  tireId            String?           @db.Uuid
+  action            TireAction?
+  depthBefore       Float?
+  depthAfter        Float?
+  pressureBefore    Float?
+  pressureAfter     Float?
+  cost              Float?
+  notes             String?
+  maintenance_forms maintenance_forms @relation(fields: [maintenanceFormId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tires             tires?            @relation(fields: [tireId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model maintenance_tires {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  maintenanceId  String       @db.Uuid
+  tireId         String       @db.Uuid
+  action         String?
+  depthBefore    Float?
+  depthAfter     Float?
+  pressureBefore Float?
+  pressureAfter  Float?
+  maintenances   maintenances @relation(fields: [maintenanceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tires          tires        @relation(fields: [tireId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model maintenances {
+  id                   String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  contractId           String?               @db.Uuid
+  requestId            String?               @unique @db.Uuid
+  mechanicId           String?               @db.Uuid
+  performedAt          DateTime              @default(now()) @db.Timestamptz(6)
+  technician           String?
+  type                 MaintenanceType
+  observations         String?
+  nextScheduled        DateTime?             @db.Timestamptz(6)
+  hoursSpent           Float?
+  laborCost            Float?
+  createdAt            DateTime              @default(now()) @db.Timestamptz(6)
+  invoice_items        invoice_items[]
+  maintenance_tires    maintenance_tires[]
+  contracts            contracts?            @relation(fields: [contractId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  mechanics            mechanics?            @relation(fields: [mechanicId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  maintenance_requests maintenance_requests? @relation(fields: [requestId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model mechanic_companies {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mechanicId String    @db.Uuid
+  companyId  String    @db.Uuid
+  assignedAt DateTime  @default(now()) @db.Timestamptz(6)
+  companies  companies @relation(fields: [companyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  mechanics  mechanics @relation(fields: [mechanicId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([mechanicId, companyId])
+}
+
+model mechanics {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name               String
+  rut                String?              @unique
+  phone              String?
+  email              String?
+  speciality         String?
+  certifications     String?
+  notes              String?
+  isActive           Boolean              @default(true)
+  createdAt          DateTime             @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime             @default(now()) @db.Timestamptz(6)
+  userId             String?              @unique(map: "idx_mechanics_userid_unique") @db.Uuid
+  maintenance_forms  maintenance_forms[]
+  maintenances       maintenances[]
+  mechanic_companies mechanic_companies[]
+  users              users?               @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_mechanics_user")
+}
+
+model quote_items {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quoteId     String @db.Uuid
+  description String
+  quantity    Float  @default(1)
+  unitPrice   Float
+  total       Float
+  quotes      quotes @relation(fields: [quoteId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model quotes {
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  number      String        @unique
+  companyId   String        @db.Uuid
+  status      QuoteStatus   @default(DRAFT)
+  validUntil  DateTime?     @db.Timestamptz(6)
+  subtotal    Float         @default(0)
+  taxRate     Float         @default(0.19)
+  taxAmount   Float         @default(0)
+  total       Float         @default(0)
+  notes       String?
+  createdById String?       @db.Uuid
+  createdAt   DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime      @default(now()) @db.Timestamptz(6)
+  quote_items quote_items[]
+  companies   companies     @relation(fields: [companyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users       users?        @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model rep_records {
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  stockTireId     String?      @db.Uuid
+  tireId          String?      @db.Uuid
+  year            Int
+  month           Int?
+  quantity        Int          @default(1)
+  weight          Float?
+  disposalMethod  String?
+  disposalCompany String?
+  certificate     String?
+  notes           String?
+  createdAt       DateTime     @default(now()) @db.Timestamptz(6)
+  stock_tires     stock_tires? @relation(fields: [stockTireId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tires           tires?       @relation(fields: [tireId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model stock_tires {
+  id                    String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                  String                  @unique
+  brand                 String?
+  model                 String?
+  size                  String
+  dot                   String?
+  lifecycle             StockLifecycle          @default(NEW_AVAILABLE)
+  purchaseDate          DateTime?               @db.Timestamptz(6)
+  purchasePrice         Float?
+  currentTireId         String?                 @db.Uuid
+  notes                 String?
+  createdAt             DateTime                @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime                @default(now()) @db.Timestamptz(6)
+  rep_records           rep_records[]
+  tires                 tires?                  @relation(fields: [currentTireId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tire_lifecycle_events tire_lifecycle_events[]
+
+  @@index([lifecycle], map: "idx_stock_lifecycle")
+}
+
+model tire_inspections {
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tireId       String     @db.Uuid
+  inspectedAt  DateTime   @default(now()) @db.Timestamptz(6)
+  inspectedBy  String?
+  depth        Float?
+  pressure     Float?
+  mileage      Int?
+  status       TireStatus
+  observations String?
+  photoUrl     String?
+  tires        tires      @relation(fields: [tireId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([tireId], map: "idx_inspections_tire")
+}
+
+model tire_lifecycle_events {
+  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  stockTireId String      @db.Uuid
+  event       String
+  fromStatus  String?
+  toStatus    String?
+  performedAt DateTime    @default(now()) @db.Timestamptz(6)
+  notes       String?
+  performedBy String?
+  stock_tires stock_tires @relation(fields: [stockTireId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model tires {
+  id                     String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  equipmentId            String                   @db.Uuid
+  position               String
+  brand                  String?
+  model                  String?
+  size                   String?
+  dot                    String?
+  installDate            DateTime?                @db.Timestamptz(6)
+  lastInspection         DateTime?                @db.Timestamptz(6)
+  currentDepth           Float?
+  initialDepth           Float?
+  pressure               Float?
+  recommendedPressure    Float?
+  mileage                Int?
+  maxMileage             Int?
+  purchasePrice          Float?
+  maintenanceCost        Float?
+  status                 TireStatus               @default(OK)
+  isActive               Boolean                  @default(true)
+  notes                  String?
+  createdAt              DateTime                 @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime                 @default(now()) @db.Timestamptz(6)
+  maintenance_tire_forms maintenance_tire_forms[]
+  maintenance_tires      maintenance_tires[]
+  rep_records            rep_records[]
+  stock_tires            stock_tires[]
+  tire_inspections       tire_inspections[]
+  equipments             equipments               @relation(fields: [equipmentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([equipmentId], map: "idx_tires_equipment")
+  @@index([status], map: "idx_tires_status")
+}
+
+model users {
+  id                   String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email                String                 @unique
+  password             String
+  name                 String
+  role                 Role                   @default(CLIENT)
+  isActive             Boolean                @default(true)
+  companyId            String?                @db.Uuid
+  createdAt            DateTime               @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime               @default(now()) @db.Timestamptz(6)
+  invoices             invoices[]
+  maintenance_requests maintenance_requests[]
+  mechanics            mechanics?
+  quotes               quotes[]
+  companies            companies?             @relation(fields: [companyId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_users_company")
+
+  @@index([companyId], map: "idx_users_company")
+  @@index([email], map: "idx_users_email")
+}
+
+enum ContractStatus {
+  ACTIVE
+  EXPIRED
+  SUSPENDED
+  PENDING
+}
+
+enum EquipmentType {
+  TRUCK
+  LOADER
+  EXCAVATOR
+  CRANE
+  FORKLIFT
+  PICKUP
+  OTHER
+}
+
+enum FormStatus {
+  DRAFT
+  COMPLETED
+  SCHEDULED
+}
+
+enum InvoiceItemType {
+  MONTHLY_FEE
+  MAINTENANCE
+  TIRE_SALE
+  REPAIR
+  OTHER
+  SERVICE
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum MaintenanceType {
+  INSPECTION
+  ROTATION
+  REPLACEMENT
+  PRESSURE_CHECK
+  EMERGENCY
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum RequestStatus {
+  PENDING
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum Role {
+  ADMIN
+  OPERATOR
+  CLIENT
+}
+
+enum StockLifecycle {
+  NEW_AVAILABLE
+  INSTALLED
+  WITHDRAWN
+  IN_REPAIR
+  REPAIRED_AVAILABLE
+  SCRAPPED
+}
+
+enum TireAction {
+  INSPECTION
+  ROTATION
+  REPLACEMENT
+  REPAIR
+  PRESSURE_CHECK
+  RETIRED
+}
+
+enum TireStatus {
+  OK
+  WARNING
+  CRITICAL
+  REPLACED
+  RETIRED
+}

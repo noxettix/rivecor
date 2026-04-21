@@ -1,0 +1,10 @@
+const r = require('express').Router();
+const c = require('../controllers/tire.controller');
+const { authenticate, authorize } = require('../middleware/auth.middleware');
+r.use(authenticate);
+r.get('/equipment/:equipmentId', c.getByEquipment);
+r.get('/:id', c.getById);
+r.post('/', authorize('ADMIN','OPERATOR'), c.create);
+r.put('/:id', authorize('ADMIN','OPERATOR'), c.update);
+r.post('/:id/inspect', authorize('ADMIN','OPERATOR'), c.registerInspection);
+module.exports = r;

@@ -1,0 +1,177 @@
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
+import api from '../services/api'
+import { StatusBadge, TrafficLight, HealthBar } from '../components/ui/StatusBadge'
+import {
+  AlertTriangle, CheckCircle2, Truck, Wrench,
+  TrendingDown, ChevronRight, Clock
+} from 'lucide-react'
+
+export default function DashboardPage() {
+  const { user } = useAuth()
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const endpoint = user?.role === 'CLIENT' ? '/dashboard/client' : '/dashboard/admin'
+    api.get(endpoint)
+      .then(r => setData(r.data))
+      .finally(() => setLoading(false))
+  }, [user])
+
+  if (loading) return (
+    <div className="flex items-center justify-center h-full">
+      <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
+
+  const { summary, equipments = [], alerts = [], recentMaintenances = [] } = data || {}
+
+  return (
+    <div className="p-6 max-w-6xl mx-auto space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-xl font-semibold text-white">Bienvenido, {user?.name?.split(' ')[0]}</h1>
+        <p className="text-sm text-zinc-500 mt-0.5">{user?.company?.name || 'Rivecor'} · {new Date().toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+      </div>
+
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard
+          label="Estado general" 
+          value={`${summary?.healthScore ?? 100}%`}
+          sub="salud de flota"
+          color={summary?.healthScore >= 80 ? 'emerald' : summary?.healthScore >= 50 ? 'amber' : 'red'}
+          icon={<CheckCircle2 size={18} />}
+        />
+        <KpiCard label="Equipos" value={summary?.totalEquipments ?? 0} sub="activos" color="zinc" icon={<Truck size={18} />} />
+        <KpiCard label="Neumáticos" value={summary?.totalTires ?? 0} sub={`${summary?.tiresCritical ?? 0} críticos`} color={summary?.tiresCritical > 0 ? 'red' : 'zinc'} icon={<div className="text-lg">🔧</div>} />
+        <KpiCard label="Solicitudes" value={summary?.pendingRequests ?? 0} sub="pendientes" color={summary?.pendingRequests > 0 ? 'amber' : 'zinc'} icon={<Wrench size={18} />} />
+      </div>
+
+      {/* Alerts */}
+      {alerts.length > 0 && (
+        <div className="card space-y-2">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle size={15} className="text-red-400" />
+            <h2 className="text-sm font-semibold text-white">Alertas activas</h2>
+            <span className="ml-auto text-xs text-zinc-500">{alerts.length} alerta{alerts.length !== 1 ? 's' : ''}</span>
+          </div>
+          {alerts.slice(0, 5).map((alert, i) => (
+            <div key={i} className={`flex items-start gap-3 p-3 rounded-lg border ${
+              alert.status === 'CRITICAL'
+                ? 'bg-red-500/5 border-red-500/20'
+                : 'bg-amber-500/5 border-amber-500/20'
+            }`}>
+              <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${alert.status === 'CRITICAL' ? 'bg-red-400' : 'bg-amber-400'}`} />
+              <div className="min-w-0">
+                <p className={`text-xs font-medium ${alert.status === 'CRITICAL' ? 'text-red-300' : 'text-amber-300'}`}>
+                  {alert.message}
+                </p>
+                {alert.depth && <p className="text-[11px] text-zinc-500 mt-0.5">Profundidad: {alert.depth}mm · Presión: {alert.pressure ?? '—'} PSI</p>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Equipments grid */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-white">Tus equipos</h2>
+          <Link to="/equipments" className="text-xs text-brand-400 hover:text-brand-300 flex items-center gap-1">
+            Ver todos <ChevronRight size={12} />
+          </Link>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {equipments.map(eq => (
+            <EquipmentCard key={eq.id} equipment={eq} />
+          ))}
+        </div>
+      </div>
+
+      {/* Recent maintenances */}
+      {recentMaintenances.length > 0 && (
+        <div className="card">
+          <div className="flex items-center gap-2 mb-4">
+            <Clock size={15} className="text-zinc-400" />
+            <h2 className="text-sm font-semibold text-white">Mantenciones recientes</h2>
+          </div>
+          <div className="space-y-2">
+            {recentMaintenances.map(m => (
+              <div key={m.id} className="flex items-center gap-3 py-2 border-b border-zinc-800 last:border-0">
+                <div className="w-1.5 h-1.5 rounded-full bg-brand-500 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-zinc-200">{m.request?.equipment?.name ?? 'Equipo'}</p>
+                  <p className="text-[11px] text-zinc-500">{m.observations || m.type}</p>
+                </div>
+                <p className="text-[11px] text-zinc-500 shrink-0">
+                  {new Date(m.performedAt).toLocaleDateString('es-CL')}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function KpiCard({ label, value, sub, color, icon }) {
+  const colors = {
+    emerald: 'text-emerald-400 bg-emerald-500/10',
+    amber:   'text-amber-400   bg-amber-500/10',
+    red:     'text-red-400     bg-red-500/10',
+    zinc:    'text-zinc-400    bg-zinc-800',
+  }
+  return (
+    <div className="card">
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-xs text-zinc-500">{label}</p>
+          <p className="text-2xl font-semibold text-white mt-1">{value}</p>
+          <p className="text-xs text-zinc-500 mt-0.5">{sub}</p>
+        </div>
+        <div className={`p-2 rounded-lg ${colors[color]}`}>{icon}</div>
+      </div>
+    </div>
+  )
+}
+
+function EquipmentCard({ equipment: eq }) {
+  const total = eq.tires?.length ?? 0
+  const critical = eq.criticalTires ?? 0
+  const warning = eq.warningTires ?? 0
+  const ok = total - critical - warning
+  const health = total > 0 ? Math.round((ok / total) * 100) : 100
+
+  return (
+    <Link to={`/equipments/${eq.id}`} className="card hover:border-zinc-700 transition-colors group block">
+      <div className="flex items-start gap-3">
+        <TrafficLight status={eq.overallStatus} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="text-sm font-medium text-white group-hover:text-brand-400 transition-colors">{eq.name}</p>
+              <p className="text-xs text-zinc-500 mt-0.5">{eq.code} · {eq.location || 'Sin ubicación'}</p>
+            </div>
+            <StatusBadge status={eq.overallStatus} />
+          </div>
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[11px] text-zinc-500">Salud de neumáticos</span>
+              <span className="text-[11px] font-medium text-zinc-300">{health}%</span>
+            </div>
+            <HealthBar value={health} />
+          </div>
+          <div className="flex gap-3 mt-2">
+            {critical > 0 && <span className="text-[11px] text-red-400">⚠ {critical} crítico{critical !== 1 ? 's' : ''}</span>}
+            {warning > 0  && <span className="text-[11px] text-amber-400">● {warning} revisar</span>}
+            {ok > 0       && <span className="text-[11px] text-zinc-500">{ok} OK</span>}
+          </div>
+        </div>
+      </div>
+    </Link>
+  )
+}
