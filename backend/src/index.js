@@ -12,6 +12,7 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://127.0.0.1:5173',
   'https://premonarchical-nonpreferable-sarina.ngrok-free.dev',
+  'https://web.rivecor.com',
 ];
 
 // ✅ CORS bien configurado
