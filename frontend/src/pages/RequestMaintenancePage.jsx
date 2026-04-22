@@ -1,7 +1,21 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Wrench, MapPin, AlertTriangle, ClipboardList, ArrowLeft } from "lucide-react";
+import {
+  Wrench,
+  MapPin,
+  AlertTriangle,
+  ClipboardList,
+  ArrowLeft,
+} from "lucide-react";
 import api from "../services/api";
+
+// ⚠️ AJUSTA estos valores según el enum real del backend
+const PRIORITY_MAP = {
+  LOW: "LOW",
+  MEDIUM: "NORMAL", // <- cambia este si tu backend usa otro valor
+  HIGH: "HIGH",
+  CRITICAL: "CRITICAL",
+};
 
 export default function RequestMaintenancePage() {
   const navigate = useNavigate();
@@ -9,6 +23,7 @@ export default function RequestMaintenancePage() {
   const [form, setForm] = useState({
     clientName: "",
     plate: "",
+    unitType: "TRUCK",
     description: "",
     priority: "MEDIUM",
     problemType: "GENERAL",
@@ -33,39 +48,64 @@ export default function RequestMaintenancePage() {
     setError("");
     setSuccess("");
 
-    if (!form.clientName.trim()) {
+    const clientName = form.clientName.trim();
+    const licensePlate = form.plate.trim().toUpperCase();
+    const unitType = form.unitType;
+    const description = form.description.trim();
+    const latitude = Number(form.lat);
+    const longitude = Number(form.lng);
+
+    if (!clientName) {
       setError("Debes ingresar el nombre del cliente.");
       return;
     }
 
-    if (!form.plate.trim()) {
+    if (!licensePlate) {
       setError("Debes ingresar la patente.");
       return;
     }
 
-    if (!form.description.trim()) {
+    if (!unitType) {
+      setError("Debes seleccionar el tipo de unidad.");
+      return;
+    }
+
+    if (!description) {
       setError("Debes ingresar una descripción del problema.");
       return;
     }
 
+    if (Number.isNaN(latitude) || Number.isNaN(longitude)) {
+      setError("La latitud y longitud deben ser números válidos.");
+      return;
+    }
+
+    const payload = {
+      clientName,
+      licensePlate,
+      unitType,
+      description,
+      priority: PRIORITY_MAP[form.priority],
+      problemType: form.problemType,
+      latitude,
+      longitude,
+    };
+
     setSaving(true);
 
     try {
-      await api.post("/maintenance/requests", {
-        clientName: form.clientName.trim(),
-        plate: form.plate.trim().toUpperCase(),
-        description: form.description.trim(),
-        priority: form.priority,
-        problemType: form.problemType,
-        lat: Number(form.lat),
-        lng: Number(form.lng),
-      });
+      console.log("PAYLOAD SOLICITUD:", payload);
+
+      const response = await api.post("/maintenance/requests", payload);
+
+      console.log("SOLICITUD CREADA:", response.data);
 
       setSuccess("Solicitud creada correctamente.");
 
       setForm({
         clientName: "",
         plate: "",
+        unitType: "TRUCK",
         description: "",
         priority: "MEDIUM",
         problemType: "GENERAL",
@@ -77,7 +117,8 @@ export default function RequestMaintenancePage() {
         navigate("/requests");
       }, 800);
     } catch (err) {
-      console.error("Error creando solicitud:", err);
+      console.error("Error creando solicitud:", err?.response?.data || err);
+
       setError(
         err?.response?.data?.error ||
           err?.response?.data?.message ||
@@ -91,13 +132,12 @@ export default function RequestMaintenancePage() {
   return (
     <div className="min-h-screen bg-zinc-950 text-white p-6">
       <div className="mx-auto max-w-4xl space-y-6">
-        {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">
               Solicitar mantenimiento
             </h1>
-            <p className="text-sm text-zinc-400 mt-1">
+            <p className="mt-1 text-sm text-zinc-400">
               Registra una solicitud y envíala al sistema principal.
             </p>
           </div>
@@ -105,16 +145,14 @@ export default function RequestMaintenancePage() {
           <button
             type="button"
             onClick={() => navigate("/requests")}
-            className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-800 transition"
+            className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800"
           >
             <ArrowLeft size={16} />
             Ver solicitudes
           </button>
         </div>
 
-        {/* Card principal */}
-        <div className="rounded-3xl border border-zinc-800 bg-zinc-900/80 shadow-2xl overflow-hidden">
-          {/* Top bar */}
+        <div className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900/80 shadow-2xl">
           <div className="border-b border-zinc-800 bg-gradient-to-r from-yellow-500/10 via-transparent to-transparent px-6 py-5">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-yellow-500/15 text-yellow-400">
@@ -131,7 +169,7 @@ export default function RequestMaintenancePage() {
             </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-6 p-6">
             {error ? (
               <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
                 {error}
@@ -144,8 +182,7 @@ export default function RequestMaintenancePage() {
               </div>
             ) : null}
 
-            {/* Datos principales */}
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-3">
               <Field
                 label="Cliente"
                 icon={<ClipboardList size={15} />}
@@ -173,14 +210,29 @@ export default function RequestMaintenancePage() {
                   className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 uppercase text-white outline-none transition placeholder:text-zinc-500 focus:border-yellow-400"
                 />
               </Field>
+
+              <Field
+                label="Tipo de unidad"
+                icon={<Wrench size={15} />}
+                required
+              >
+                <select
+                  name="unitType"
+                  value={form.unitType}
+                  onChange={handleChange}
+                  className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-white outline-none transition focus:border-yellow-400"
+                >
+                  <option value="TRUCK">CAMIÓN</option>
+                  <option value="VEHICLE">VEHÍCULO</option>
+                  <option value="PICKUP">PICKUP</option>
+                  <option value="VAN">VAN</option>
+                  <option value="MACHINE">MAQUINARIA</option>
+                </select>
+              </Field>
             </div>
 
-            {/* Selects */}
             <div className="grid gap-4 md:grid-cols-2">
-              <Field
-                label="Tipo de problema"
-                icon={<Wrench size={15} />}
-              >
+              <Field label="Tipo de problema" icon={<Wrench size={15} />}>
                 <select
                   name="problemType"
                   value={form.problemType}
@@ -195,10 +247,7 @@ export default function RequestMaintenancePage() {
                 </select>
               </Field>
 
-              <Field
-                label="Prioridad"
-                icon={<AlertTriangle size={15} />}
-              >
+              <Field label="Prioridad" icon={<AlertTriangle size={15} />}>
                 <select
                   name="priority"
                   value={form.priority}
@@ -213,7 +262,6 @@ export default function RequestMaintenancePage() {
               </Field>
             </div>
 
-            {/* Descripción */}
             <Field
               label="Descripción del problema"
               icon={<ClipboardList size={15} />}
@@ -225,11 +273,10 @@ export default function RequestMaintenancePage() {
                 onChange={handleChange}
                 rows={5}
                 placeholder="Describe el problema..."
-                className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-yellow-400 resize-none"
+                className="w-full resize-none rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-yellow-400"
               />
             </Field>
 
-            {/* Ubicación */}
             <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
               <div className="mb-4 flex items-center gap-2">
                 <MapPin size={16} className="text-yellow-400" />
@@ -263,7 +310,6 @@ export default function RequestMaintenancePage() {
               </p>
             </div>
 
-            {/* Botones */}
             <div className="flex flex-col gap-3 pt-2 sm:flex-row">
               <button
                 type="submit"
