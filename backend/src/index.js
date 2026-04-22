@@ -40,6 +40,7 @@ app.use('/api/invoices', require('./routes/invoice.routes'));
 app.use('/api/quotes', require('./routes/quote.routes'));
 app.use('/api/notifications', require('./routes/notifications.routes'));
 app.use('/api/clients', require('./routes/clients.routes'));
+app.use('/api/fleet', require('./routes/fleet.routes'));
 
 // ─── Catálogo de neumáticos ──────────────────────────────────
 app.use('/api', require('./routes/tireCatalog.routes'));

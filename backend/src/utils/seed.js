@@ -12,7 +12,7 @@ async function main() {
   const mechanicPass = await bcrypt.hash('mecanico2024', 10);
 
   // Empresa demo
-  const company = await prisma.company.upsert({
+  const company = await prisma.companies.upsert({
     where: { rut: '76.123.456-7' },
     update: {
       name: 'Minera Los Andes S.A.',
@@ -34,7 +34,7 @@ async function main() {
   });
 
   // Usuario admin demo
-  const adminUser = await prisma.user.upsert({
+  await prisma.users.upsert({
     where: { email: 'admin@rivecor.cl' },
     update: {
       name: 'Evelyn Rivera',
@@ -52,7 +52,7 @@ async function main() {
   });
 
   // Usuario cliente demo
-  const clientUser = await prisma.user.upsert({
+  await prisma.users.upsert({
     where: { email: 'cliente@minera.cl' },
     update: {
       name: 'Juan Pérez',
@@ -72,7 +72,7 @@ async function main() {
   });
 
   // Usuario mecánico demo
-  const mechanicUser = await prisma.user.upsert({
+  const mechanicUser = await prisma.users.upsert({
     where: { email: 'mecanico@rivecor.cl' },
     update: {
       name: 'Juan Soto',
@@ -85,7 +85,6 @@ async function main() {
       email: 'mecanico@rivecor.cl',
       password: mechanicPass,
       name: 'Juan Soto',
-      password: mechanicPass,
       role: 'OPERATOR',
       companyId: company.id,
       isActive: true,
@@ -93,7 +92,7 @@ async function main() {
   });
 
   // Mecánico 1 vinculado al usuario demo
-  const mec1 = await prisma.mechanic.upsert({
+  await prisma.mechanics.upsert({
     where: { rut: '12.345.678-9' },
     update: {
       name: 'Juan Soto',
@@ -116,8 +115,8 @@ async function main() {
     },
   });
 
-  // Mecánico 2 sin usuario login
-  const mec2 = await prisma.mechanic.upsert({
+  // Mecánico 2 sin login
+  await prisma.mechanics.upsert({
     where: { rut: '13.456.789-0' },
     update: {
       name: 'Pedro Díaz',
@@ -136,14 +135,16 @@ async function main() {
     },
   });
 
-  // Equipos demo (evita duplicar)
-  const existingTruck = await prisma.equipment.findFirst({
-    where: { companyId: company.id, code: 'CAM-001' },
+  // Equipo demo 1
+  let truck = await prisma.equipments.findFirst({
+    where: {
+      companyId: company.id,
+      code: 'CAM-001',
+    },
   });
 
-  let truck = existingTruck;
   if (!truck) {
-    truck = await prisma.equipment.create({
+    truck = await prisma.equipments.create({
       data: {
         companyId: company.id,
         code: 'CAM-001',
@@ -157,7 +158,7 @@ async function main() {
       },
     });
 
-    await prisma.tire.createMany({
+    await prisma.tires.createMany({
       data: [
         {
           equipmentId: truck.id,
@@ -247,13 +248,16 @@ async function main() {
     });
   }
 
-  const existingLoader = await prisma.equipment.findFirst({
-    where: { companyId: company.id, code: 'CAR-001' },
+  // Equipo demo 2
+  let loader = await prisma.equipments.findFirst({
+    where: {
+      companyId: company.id,
+      code: 'CAR-001',
+    },
   });
 
-  let loader = existingLoader;
   if (!loader) {
-    loader = await prisma.equipment.create({
+    loader = await prisma.equipments.create({
       data: {
         companyId: company.id,
         code: 'CAR-001',
@@ -266,7 +270,7 @@ async function main() {
       },
     });
 
-    await prisma.tire.createMany({
+    await prisma.tires.createMany({
       data: [
         {
           equipmentId: loader.id,
@@ -329,12 +333,12 @@ async function main() {
   }
 
   // Contrato demo
-  const existingContract = await prisma.contract.findFirst({
+  const existingContract = await prisma.contracts.findFirst({
     where: { number: 'CONT-2024-001' },
   });
 
   if (!existingContract) {
-    await prisma.contract.create({
+    await prisma.contracts.create({
       data: {
         number: 'CONT-2024-001',
         companyId: company.id,
