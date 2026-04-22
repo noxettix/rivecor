@@ -8,7 +8,7 @@ const app = express();
 const server = http.createServer(app);
 
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['https://premonarchical-nonpreferable-sarina.ngrok-free.dev/api'],
+  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['*'],
   credentials: true,
 }));
 
@@ -41,6 +41,7 @@ app.use('/api/quotes', require('./routes/quote.routes'));
 app.use('/api/notifications', require('./routes/notifications.routes'));
 app.use('/api/clients', require('./routes/clients.routes'));
 app.use('/api/fleet', require('./routes/fleet.routes'));
+app.use('/api/tracking', require('./routes/tracking.routes'));
 
 // ─── Catálogo de neumáticos ──────────────────────────────────
 app.use('/api', require('./routes/tireCatalog.routes'));
@@ -58,7 +59,7 @@ app.get(
 
 // ─── Error handler ───────────────────────────────────────────
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error('ERROR GLOBAL:', err);
   res.status(err.status || 500).json({
     error: err.message || 'Error interno',
   });
@@ -72,7 +73,8 @@ server.listen(PORT, () => {
   try {
     const { initTracking } = require('./services/trackingService');
     initTracking(server);
+    console.log('🗺️ Tracking WebSocket iniciado');
   } catch (e) {
-    console.log('ℹ️ WebSocket tracking no disponible (instala socket.io)');
+    console.log('ℹ️ WebSocket tracking no disponible:', e.message);
   }
 });

@@ -1,88 +1,112 @@
-// backend/src/services/trackingService.js
-// Agregar al index.js existente
-
 const { Server } = require('socket.io');
+const jwt = require('jsonwebtoken');
 
 let io = null;
 
-// Inicializar WebSocket sobre el servidor HTTP existente
-function initTracking(httpServer) {
-  io = new Server(httpServer, {
+// requestId => última ubicación
+const liveLocations = new Map();
+
+function normalizeToken(raw) {
+  if (!raw) return null;
+  if (raw.startsWith('Bearer ')) return raw.replace('Bearer ', '').trim();
+  return raw.trim();
+}
+
+function initTracking(server) {
+  io = new Server(server, {
     cors: {
-      origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173'],
-      methods: ['GET', 'POST']
+      origin: '*',
+      methods: ['GET', 'POST', 'PUT'],
+    },
+    transports: ['websocket', 'polling'],
+  });
+
+  io.use((socket, next) => {
+    try {
+      const token =
+        normalizeToken(socket.handshake.auth?.token) ||
+        normalizeToken(socket.handshake.headers?.authorization);
+
+      if (!token) {
+        return next(new Error('No autorizado'));
+      }
+
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      socket.user = decoded;
+      next();
+    } catch (e) {
+      next(new Error('Token inválido'));
     }
   });
 
   io.on('connection', (socket) => {
-    console.log('🔌 Socket conectado:', socket.id);
+    console.log('🔌 Socket conectado:', socket.user?.email || socket.id);
 
-    // Mecánico actualiza su ubicación
-    // Emitido por la app mobile del mecánico cada 5 segundos
-    socket.on('mechanic:location', ({ mechanicId, mechanicName, lat, lng, requestId }) => {
-      console.log(`📍 Mecánico ${mechanicName}: ${lat}, ${lng}`);
+    socket.on('tracking:join-request', ({ requestId }) => {
+      if (!requestId) return;
 
-      // Guardar última ubicación en memoria
-      mechanicLocations[mechanicId] = {
-        mechanicId, mechanicName, lat, lng,
-        updatedAt: new Date().toISOString()
-      };
+      socket.join(`request:${requestId}`);
 
-      // Emitir a todos los clientes que están viendo esa solicitud
-      if (requestId) {
-        io.to(`request:${requestId}`).emit('mechanic:moved', {
-          mechanicId, mechanicName, lat, lng,
-          updatedAt: new Date().toISOString()
-        });
+      const lastLocation = liveLocations.get(String(requestId));
+      if (lastLocation) {
+        socket.emit('tracking:location', lastLocation);
       }
-
-      // Emitir a sala del mecánico para que todos lo vean
-      io.to(`mechanic:${mechanicId}`).emit('mechanic:moved', {
-        mechanicId, mechanicName, lat, lng,
-        updatedAt: new Date().toISOString()
-      });
     });
 
-    // Cliente se une a sala de seguimiento de una solicitud
-    socket.on('tracking:join', ({ requestId, role }) => {
-      socket.join(`request:${requestId}`);
-      console.log(`👁 ${role} observando solicitud ${requestId}`);
-
-      // Enviar última ubicación conocida del mecánico si existe
-      const loc = Object.values(mechanicLocations)[0]; // simplificado
-      if (loc) socket.emit('mechanic:moved', loc);
+    socket.on('tracking:leave-request', ({ requestId }) => {
+      if (!requestId) return;
+      socket.leave(`request:${requestId}`);
     });
 
-    // Mecánico acepta una solicitud y empieza tracking
-    socket.on('mechanic:accept', ({ mechanicId, requestId, estimatedMinutes }) => {
-      socket.join(`request:${requestId}`);
-      io.to(`request:${requestId}`).emit('request:accepted', {
-        mechanicId, requestId, estimatedMinutes,
-        estimatedAt: new Date(Date.now() + estimatedMinutes * 60000).toISOString()
-      });
-    });
+    socket.on('tracking:update', (payload) => {
+      try {
+        const requestId = String(payload?.requestId || '');
+        if (!requestId) return;
 
-    // Mecánico llega
-    socket.on('mechanic:arrived', ({ requestId }) => {
-      io.to(`request:${requestId}`).emit('request:arrived', {
-        arrivedAt: new Date().toISOString()
-      });
+        const lat = Number(payload?.lat);
+        const lng = Number(payload?.lng);
+
+        if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+
+        const normalized = {
+          requestId,
+          mechanicUserId: socket.user?.userId || null,
+          mechanicName: payload?.mechanicName || 'Mecánico',
+          lat,
+          lng,
+          heading: payload?.heading != null ? Number(payload.heading) : null,
+          speed: payload?.speed != null ? Number(payload.speed) : null,
+          updatedAt: new Date().toISOString(),
+        };
+
+        liveLocations.set(requestId, normalized);
+        io.to(`request:${requestId}`).emit('tracking:location', normalized);
+      } catch (e) {
+        console.error('tracking:update error:', e);
+      }
     });
 
     socket.on('disconnect', () => {
-      console.log('🔌 Socket desconectado:', socket.id);
+      console.log('🔌 Socket desconectado:', socket.user?.email || socket.id);
     });
   });
-
-  console.log('🗺️ Tracking WebSocket iniciado');
-  return io;
 }
 
-// Ubicaciones en memoria (en producción usar Redis)
-const mechanicLocations = {};
+function getLiveLocation(requestId) {
+  return liveLocations.get(String(requestId)) || null;
+}
 
-function getIO() { return io; }
-function getMechanicLocation(mechanicId) { return mechanicLocations[mechanicId] || null; }
-function getAllLocations() { return mechanicLocations; }
+function setLiveLocation(requestId, location) {
+  const key = String(requestId);
+  liveLocations.set(key, location);
 
-module.exports = { initTracking, getIO, getMechanicLocation, getAllLocations };
+  if (io) {
+    io.to(`request:${key}`).emit('tracking:location', location);
+  }
+}
+
+module.exports = {
+  initTracking,
+  getLiveLocation,
+  setLiveLocation,
+};
