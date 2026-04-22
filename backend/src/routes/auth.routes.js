@@ -5,4 +5,8 @@ const { authenticate } = require('../middleware/auth.middleware');
 router.post('/login', ctrl.login);
 router.get('/me', authenticate, ctrl.me);
 
+router.all('/login', (_req, res) => {
+  return res.status(405).json({ error: 'Método no permitido' });
+});
+
 module.exports = router;

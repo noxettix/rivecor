@@ -1,19 +1,21 @@
-const r = require('express').Router();
-const c = require('../controllers/tracking.controller');
+const router = require('express').Router();
+const { updateLocation, getTrackingByRequest } = require('../controllers/tracking.controller');
 const { authenticate, authorize } = require('../middleware/auth.middleware');
 
-r.use(authenticate);
-
-r.get(
-  '/request/:requestId',
+// Cliente, admin o mecánico pueden ver tracking
+router.get(
+  '/maintenance/requests/:id/tracking',
+  authenticate,
   authorize('CLIENT', 'ADMIN', 'OPERATOR'),
-  c.getTrackingByRequest
+  getTrackingByRequest
 );
 
-r.put(
-  '/request/:requestId/location',
+// Solo mecánico/admin actualiza ubicación GPS
+router.put(
+  '/maintenance/requests/:id/location',
+  authenticate,
   authorize('ADMIN', 'OPERATOR'),
-  c.updateMechanicLocation
+  updateLocation
 );
 
-module.exports = r;
+module.exports = router;

@@ -1,29 +1,77 @@
 const { prisma } = require('../lib/prisma');
-const { getLiveLocation, setLiveLocation } = require('../services/trackingService');
 
-function getRequestModel() {
+function getMaintenanceRequestModel() {
   return (
     prisma.maintenance_requests ||
     prisma.maintenanceRequests ||
-    prisma.maintenancerequests
+    prisma.maintenancerequests ||
+    prisma.maintenanceRequest
   );
 }
 
-function getMechanicModel() {
+function getMechanicsModel() {
   return prisma.mechanics || prisma.mechanic;
 }
 
-const getTrackingByRequest = async (req, res) => {
+const updateLocation = async (req, res) => {
   try {
-    const { requestId } = req.params;
-    const MaintenanceRequest = getRequestModel();
+    const { id } = req.params;
+    const { lat, lng, heading, speed } = req.body;
+
+    if (lat == null || lng == null) {
+      return res.status(400).json({ error: 'Lat y Lng requeridos' });
+    }
+
+    const MaintenanceRequest = getMaintenanceRequestModel();
 
     if (!MaintenanceRequest) {
-      return res.status(500).json({ error: 'Modelo maintenance_requests no disponible' });
+      return res.status(500).json({ error: 'Modelo de solicitudes no disponible' });
+    }
+
+    const dataToSave = {
+      lastLat: Number(lat),
+      lastLng: Number(lng),
+      lastUpdate: new Date(),
+    };
+
+    if (heading != null) dataToSave.lastHeading = Number(heading);
+    if (speed != null) dataToSave.lastSpeed = Number(speed);
+
+    const updated = await MaintenanceRequest.update({
+      where: { id },
+      data: dataToSave,
+    });
+
+    return res.json({
+      ok: true,
+      requestId: id,
+      location: {
+        lat: dataToSave.lastLat,
+        lng: dataToSave.lastLng,
+        heading: dataToSave.lastHeading ?? null,
+        speed: dataToSave.lastSpeed ?? null,
+        updatedAt: dataToSave.lastUpdate,
+      },
+      updated,
+    });
+  } catch (e) {
+    console.error('TRACKING UPDATE ERROR:', e);
+    return res.status(500).json({ error: e.message || 'Error guardando ubicación' });
+  }
+};
+
+const getTrackingByRequest = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const MaintenanceRequest = getMaintenanceRequestModel();
+    const Mechanics = getMechanicsModel();
+
+    if (!MaintenanceRequest) {
+      return res.status(500).json({ error: 'Modelo de solicitudes no disponible' });
     }
 
     const request = await MaintenanceRequest.findUnique({
-      where: { id: requestId },
+      where: { id },
       include: {
         users: true,
         equipments: true,
@@ -39,78 +87,48 @@ const getTrackingByRequest = async (req, res) => {
       return res.status(404).json({ error: 'Solicitud no encontrada' });
     }
 
-    const liveLocation = getLiveLocation(requestId);
-
-    const maintenanceForm = Array.isArray(request.maintenance_forms)
+    const form = Array.isArray(request.maintenance_forms)
       ? request.maintenance_forms[0]
       : request.maintenance_forms;
 
-    const mechanic = maintenanceForm?.mechanics || null;
+    let mechanic = form?.mechanics || null;
+
+    if (!mechanic && Mechanics && req.user?.role === 'OPERATOR') {
+      mechanic = await Mechanics.findFirst({
+        where: { userId: req.user.userId || req.user.id },
+      });
+    }
 
     return res.json({
-      requestId,
+      id: request.id,
       status: request.status,
       mechanic: mechanic
         ? {
             id: mechanic.id,
             name: mechanic.name || 'Mecánico',
             phone: mechanic.phone || null,
+            email: mechanic.email || null,
           }
         : null,
-      location: liveLocation,
+      mechanicLat: request.lastLat ?? null,
+      mechanicLng: request.lastLng ?? null,
+      mechanicHeading: request.lastHeading ?? null,
+      mechanicSpeed: request.lastSpeed ?? null,
+      lastUpdate: request.lastUpdate ?? null,
+      licensePlate:
+        request?.equipments?.licensePlate ||
+        request?.equipments?.code ||
+        request?.equipments?.name ||
+        null,
+      unitType: request?.equipments?.type || null,
     });
   } catch (e) {
-    console.error('getTrackingByRequest error:', e);
-    return res.status(500).json({ error: e.message });
-  }
-};
-
-const updateMechanicLocation = async (req, res) => {
-  try {
-    const { requestId } = req.params;
-    const { lat, lng, heading, speed } = req.body;
-
-    if (lat == null || lng == null) {
-      return res.status(400).json({ error: 'lat y lng son obligatorios' });
-    }
-
-    const Mechanic = getMechanicModel();
-    let mechanicName = 'Mecánico';
-
-    if (Mechanic && req.user?.userId) {
-      const mechanic = await Mechanic.findFirst({
-        where: { userId: req.user.userId },
-      });
-
-      if (mechanic?.name) {
-        mechanicName = mechanic.name;
-      }
-    }
-
-    const payload = {
-      requestId: String(requestId),
-      mechanicUserId: req.user?.userId || null,
-      mechanicName,
-      lat: Number(lat),
-      lng: Number(lng),
-      heading: heading != null ? Number(heading) : null,
-      speed: speed != null ? Number(speed) : null,
-      updatedAt: new Date().toISOString(),
-    };
-
-    setLiveLocation(requestId, payload);
-
-    return res.json({
-      ok: true,
-      location: payload,
-    });
-  } catch (e) {
-    console.error('updateMechanicLocation error:', e);
-    return res.status(500).json({ error: e.message });
+    console.error('TRACKING GET ERROR:', e);
+    return res.status(500).json({ error: e.message || 'Error obteniendo tracking' });
   }
 };
 
 module.exports = {
+  updateLocation,
   getTrackingByRequest,
-  updateMechanicLocation,
 };

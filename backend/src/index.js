@@ -7,10 +7,32 @@ const http = require('http');
 const app = express();
 const server = http.createServer(app);
 
-app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['*'],
+// ✅ Orígenes permitidos
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'https://premonarchical-nonpreferable-sarina.ngrok-free.dev',
+];
+
+// ✅ CORS bien configurado
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Permitir requests sin origin (Postman, curl, health checks, navegador directo)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS bloqueado para origen: ${origin}`));
+  },
   credentials: true,
-}));
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 app.use(express.json());
 app.use(morgan('dev'));
@@ -41,7 +63,7 @@ app.use('/api/quotes', require('./routes/quote.routes'));
 app.use('/api/notifications', require('./routes/notifications.routes'));
 app.use('/api/clients', require('./routes/clients.routes'));
 app.use('/api/fleet', require('./routes/fleet.routes'));
-app.use('/api/tracking', require('./routes/tracking.routes'));
+app.use('/api', require('./routes/tracking.routes'));
 
 // ─── Catálogo de neumáticos ──────────────────────────────────
 app.use('/api', require('./routes/tireCatalog.routes'));
@@ -60,6 +82,12 @@ app.get(
 // ─── Error handler ───────────────────────────────────────────
 app.use((err, req, res, next) => {
   console.error('ERROR GLOBAL:', err);
+
+  // Si es error de CORS
+  if (err.message && err.message.startsWith('CORS bloqueado')) {
+    return res.status(403).json({ error: err.message });
+  }
+
   res.status(err.status || 500).json({
     error: err.message || 'Error interno',
   });
@@ -69,12 +97,4 @@ const PORT = process.env.PORT || 3001;
 
 server.listen(PORT, () => {
   console.log(`🚀 Rivecor Ultimate → puerto ${PORT}`);
-
-  try {
-    const { initTracking } = require('./services/trackingService');
-    initTracking(server);
-    console.log('🗺️ Tracking WebSocket iniciado');
-  } catch (e) {
-    console.log('ℹ️ WebSocket tracking no disponible:', e.message);
-  }
 });

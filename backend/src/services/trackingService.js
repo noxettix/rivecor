@@ -7,12 +7,16 @@ let io = null;
 const liveLocations = new Map();
 
 function normalizeToken(raw) {
-  if (!raw) return null;
+  if (!raw || typeof raw !== 'string') return null;
   if (raw.startsWith('Bearer ')) return raw.replace('Bearer ', '').trim();
   return raw.trim();
 }
 
 function initTracking(server) {
+  if (io) {
+    return io;
+  }
+
   io = new Server(server, {
     cors: {
       origin: '*',
@@ -35,6 +39,7 @@ function initTracking(server) {
       socket.user = decoded;
       next();
     } catch (e) {
+      console.error('❌ socket auth error:', e?.message || e);
       next(new Error('Token inválido'));
     }
   });
@@ -43,34 +48,40 @@ function initTracking(server) {
     console.log('🔌 Socket conectado:', socket.user?.email || socket.id);
 
     socket.on('tracking:join-request', ({ requestId }) => {
-      if (!requestId) return;
+      const safeRequestId = String(requestId || '').trim();
+      if (!safeRequestId) return;
 
-      socket.join(`request:${requestId}`);
+      socket.join(`request:${safeRequestId}`);
 
-      const lastLocation = liveLocations.get(String(requestId));
+      const lastLocation = liveLocations.get(safeRequestId);
       if (lastLocation) {
         socket.emit('tracking:location', lastLocation);
       }
     });
 
     socket.on('tracking:leave-request', ({ requestId }) => {
-      if (!requestId) return;
-      socket.leave(`request:${requestId}`);
+      const safeRequestId = String(requestId || '').trim();
+      if (!safeRequestId) return;
+
+      socket.leave(`request:${safeRequestId}`);
     });
 
-    socket.on('tracking:update', (payload) => {
+    socket.on('tracking:update', (payload = {}) => {
       try {
-        const requestId = String(payload?.requestId || '');
-        if (!requestId) return;
+        const safeRequestId = String(payload?.requestId || '').trim();
+        if (!safeRequestId) return;
 
         const lat = Number(payload?.lat);
         const lng = Number(payload?.lng);
 
-        if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+        if (Number.isNaN(lat) || Number.isNaN(lng)) {
+          console.log('⚠️ tracking:update ignorado por lat/lng inválidos');
+          return;
+        }
 
         const normalized = {
-          requestId,
-          mechanicUserId: socket.user?.userId || null,
+          requestId: safeRequestId,
+          mechanicUserId: socket.user?.userId || socket.user?.id || null,
           mechanicName: payload?.mechanicName || 'Mecánico',
           lat,
           lng,
@@ -79,10 +90,13 @@ function initTracking(server) {
           updatedAt: new Date().toISOString(),
         };
 
-        liveLocations.set(requestId, normalized);
-        io.to(`request:${requestId}`).emit('tracking:location', normalized);
+        liveLocations.set(safeRequestId, normalized);
+
+        io.to(`request:${safeRequestId}`).emit('tracking:location', normalized);
+
+        console.log('📍 tracking:update emitido:', safeRequestId, lat, lng);
       } catch (e) {
-        console.error('tracking:update error:', e);
+        console.error('❌ tracking:update error:', e);
       }
     });
 
@@ -90,23 +104,40 @@ function initTracking(server) {
       console.log('🔌 Socket desconectado:', socket.user?.email || socket.id);
     });
   });
+
+  return io;
+}
+
+function getIO() {
+  return io;
 }
 
 function getLiveLocation(requestId) {
-  return liveLocations.get(String(requestId)) || null;
+  const key = String(requestId || '').trim();
+  if (!key) return null;
+  return liveLocations.get(key) || null;
 }
 
 function setLiveLocation(requestId, location) {
-  const key = String(requestId);
-  liveLocations.set(key, location);
+  const key = String(requestId || '').trim();
+  if (!key || !location) return;
+
+  const normalized = {
+    ...location,
+    requestId: key,
+    updatedAt: location.updatedAt || new Date().toISOString(),
+  };
+
+  liveLocations.set(key, normalized);
 
   if (io) {
-    io.to(`request:${key}`).emit('tracking:location', location);
+    io.to(`request:${key}`).emit('tracking:location', normalized);
   }
 }
 
 module.exports = {
   initTracking,
+  getIO,
   getLiveLocation,
   setLiveLocation,
 };
