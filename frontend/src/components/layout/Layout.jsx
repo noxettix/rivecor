@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Truck,
@@ -9,58 +9,71 @@ import {
   Eye,
   UserPlus,
   ListChecks,
-} from 'lucide-react'
-import { useAuth } from '../../context/AuthContext'
+  Bell,
+  FileText,
+  Package,
+  Recycle,
+  CircleDollarSign,
+} from "lucide-react";
+import { useAuth } from "../../context/AuthContext";
 
 export default function Layout() {
-  const navigate = useNavigate()
-  const { user, logout } = useAuth()
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
-  const isAdmin = user?.role === 'ADMIN'
-  const isOperator = user?.role === 'OPERATOR' || user?.role === 'MECHANIC'
-  const isClient = user?.role === 'CLIENT'
+  const role = String(user?.role || "").toUpperCase();
+
+  const isAdmin = role === "ADMIN";
+  const isOperator = role === "OPERATOR" || role === "MECHANIC";
+  const isClient = role === "CLIENT";
 
   const nav = isClient
     ? [
-        { to: '/client', icon: LayoutDashboard, label: 'Mi panel', end: true },
-        { to: '/fleet', icon: Truck, label: 'Mi flota' },
-        { to: '/requests', icon: ListChecks, label: 'Solicitudes' },
+        { to: "/client", icon: LayoutDashboard, label: "Mi panel", end: true },
+        { to: "/fleet", icon: Truck, label: "Mi flota" },
+        { to: "/requests", icon: ListChecks, label: "Solicitudes" },
+        { to: "/request-maintenance", icon: Wrench, label: "Solicitar" },
       ]
     : isOperator
     ? [
-        { to: '/mechanic', icon: LayoutDashboard, label: 'Dashboard', end: true },
-        { to: '/equipments', icon: Truck, label: 'Equipos' },
-        { to: '/maintenance/form', icon: ClipboardList, label: 'Formulario' },
+        { to: "/mechanic", icon: LayoutDashboard, label: "Dashboard", end: true },
+        { to: "/equipments", icon: Truck, label: "Equipos" },
+        { to: "/maintenance/form", icon: ClipboardList, label: "Formulario" },
       ]
     : [
-        { to: '/admin', icon: LayoutDashboard, label: 'Panel Rivecor', end: true },
-        { to: '/equipments', icon: Truck, label: 'Equipos' },
-        { to: '/maintenance', icon: Wrench, label: 'Mantención' },
-        { to: '/maintenance/form', icon: ClipboardList, label: 'Formulario' },
-        { to: '/mechanics', icon: Users, label: 'Mecánicos' },
-        { to: '/clients', icon: UserPlus, label: 'Clientes' },
-      ]
+        { to: "/admin", icon: LayoutDashboard, label: "Panel Rivecor", end: true },
 
-  const roleLabel = isAdmin
-    ? 'Administrador'
-    : isOperator
-    ? 'Mecánico'
-    : 'Cliente'
+        { to: "/equipments", icon: Truck, label: "Equipos" },
+        { to: "/maintenance", icon: Wrench, label: "Mantención" },
+        { to: "/maintenance/form", icon: ClipboardList, label: "Formulario" },
+
+        { to: "/mechanics", icon: Users, label: "Mecánicos" },
+        { to: "/clients", icon: UserPlus, label: "Clientes" },
+
+        { to: "/stock", icon: Package, label: "Stock" },
+        { to: "/tire-catalog", icon: Truck, label: "Neumáticos" },
+        { to: "/rep", icon: Recycle, label: "REP" },
+        { to: "/notifications", icon: Bell, label: "Notificaciones" },
+        { to: "/invoices", icon: FileText, label: "Facturación" },
+        { to: "/reports", icon: CircleDollarSign, label: "Reportes" },
+      ];
+
+  const roleLabel = isAdmin ? "Administrador" : isOperator ? "Mecánico" : "Cliente";
 
   const roleColor = isAdmin
-    ? 'text-yellow-400'
+    ? "text-yellow-400"
     : isOperator
-    ? 'text-yellow-300'
-    : 'text-amber-300'
+    ? "text-yellow-300"
+    : "text-amber-300";
 
   const handleLogout = () => {
-    logout()
-    navigate('/login', { replace: true })
-  }
+    logout();
+    navigate("/login", { replace: true });
+  };
 
   return (
     <div className="flex h-screen overflow-hidden bg-black text-white">
-      <aside className="w-60 shrink-0 border-r border-yellow-500/15 bg-zinc-950 flex flex-col">
+      <aside className="w-64 shrink-0 border-r border-yellow-500/15 bg-zinc-950 flex flex-col">
         <div className="px-4 py-5 border-b border-yellow-500/10">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-yellow-400 flex items-center justify-center shrink-0 shadow-[0_0_20px_rgba(250,204,21,0.18)]">
@@ -68,21 +81,27 @@ export default function Layout() {
             </div>
 
             <div>
-              <p className="text-sm font-semibold text-white leading-none">Rivecor</p>
-              <p className="text-[10px] text-zinc-500 mt-1">Eco Móvil 360</p>
+              <p className="text-sm font-semibold text-white leading-none">
+                Rivecor
+              </p>
+              <p className="text-[10px] text-zinc-500 mt-1">
+                Eco Móvil 360
+              </p>
             </div>
           </div>
         </div>
 
         <div className="px-4 py-3 border-b border-yellow-500/10">
-          <span className={`text-[10px] font-semibold uppercase tracking-wider ${roleColor}`}>
+          <span
+            className={`text-[10px] font-semibold uppercase tracking-wider ${roleColor}`}
+          >
             {roleLabel}
           </span>
 
           {isClient && (
             <p className="text-[10px] text-zinc-500 mt-1 flex items-center gap-1">
               <Eye size={10} />
-              Solo lectura
+              Portal cliente
             </p>
           )}
         </div>
@@ -96,8 +115,8 @@ export default function Layout() {
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm border transition-all ${
                   isActive
-                    ? 'bg-yellow-500/15 text-yellow-400 border-yellow-500/20 font-medium'
-                    : 'text-zinc-400 border-transparent hover:text-white hover:bg-zinc-900'
+                    ? "bg-yellow-500/15 text-yellow-400 border-yellow-500/20 font-medium"
+                    : "text-zinc-400 border-transparent hover:text-white hover:bg-zinc-900"
                 }`
               }
             >
@@ -110,15 +129,15 @@ export default function Layout() {
         <div className="p-3 border-t border-yellow-500/10">
           <div className="flex items-center gap-3 px-2 py-2 rounded-xl bg-black/30 border border-zinc-900">
             <div className="w-8 h-8 rounded-full bg-yellow-400 text-black flex items-center justify-center text-xs font-bold shrink-0">
-              {user?.name?.[0]?.toUpperCase() || 'U'}
+              {user?.name?.[0]?.toUpperCase() || "U"}
             </div>
 
             <div className="min-w-0 flex-1">
               <p className="text-xs font-medium text-zinc-200 truncate">
-                {user?.name || 'Usuario'}
+                {user?.name || user?.email || "Usuario"}
               </p>
               <p className="text-[10px] text-zinc-500 truncate">
-                {user?.companyId ? 'Empresa asignada' : 'Rivecor'}
+                {user?.companyId ? "Empresa asignada" : "Rivecor"}
               </p>
             </div>
 
@@ -141,5 +160,5 @@ export default function Layout() {
         </div>
       </main>
     </div>
-  )
+  );
 }

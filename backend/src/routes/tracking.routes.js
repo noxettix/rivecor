@@ -1,20 +1,23 @@
 const router = require('express').Router();
-const { updateLocation, getTrackingByRequest } = require('../controllers/tracking.controller');
+
+const {
+  updateLocation,
+  getTrackingByRequest,
+} = require('../controllers/tracking.controller');
+
 const { authenticate, authorize } = require('../middleware/auth.middleware');
 
-// Cliente, admin o mecánico pueden ver tracking
 router.get(
   '/maintenance/requests/:id/tracking',
   authenticate,
-  authorize('CLIENT', 'ADMIN', 'OPERATOR'),
+  authorize('CLIENT', 'ADMIN', 'OPERATOR', 'MECHANIC'),
   getTrackingByRequest
 );
 
-// Solo mecánico/admin actualiza ubicación GPS
 router.put(
   '/maintenance/requests/:id/location',
   authenticate,
-  authorize('ADMIN', 'OPERATOR'),
+  authorize('ADMIN', 'OPERATOR', 'MECHANIC'),
   updateLocation
 );
 

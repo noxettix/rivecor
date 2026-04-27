@@ -16,14 +16,14 @@ function formatDate(date) {
 }
 
 function statusColor(status) {
-  switch (status) {
+  switch (String(status || "").toUpperCase()) {
     case "PENDING":
       return "bg-yellow-500/20 text-yellow-400";
-    case "ASSIGNED":
+    case "SCHEDULED":
       return "bg-blue-500/20 text-blue-400";
     case "IN_PROGRESS":
       return "bg-purple-500/20 text-purple-400";
-    case "DONE":
+    case "COMPLETED":
       return "bg-green-500/20 text-green-400";
     case "CANCELLED":
       return "bg-red-500/20 text-red-400";
@@ -33,14 +33,14 @@ function statusColor(status) {
 }
 
 function statusLabel(status) {
-  switch (status) {
+  switch (String(status || "").toUpperCase()) {
     case "PENDING":
       return "Pendiente";
-    case "ASSIGNED":
-      return "Asignado";
+    case "SCHEDULED":
+      return "Tomado";
     case "IN_PROGRESS":
-      return "En progreso";
-    case "DONE":
+      return "En camino";
+    case "COMPLETED":
       return "Finalizado";
     case "CANCELLED":
       return "Cancelado";
@@ -52,7 +52,6 @@ function statusLabel(status) {
 export default function ClientRequestsPage() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
 
   const loadRequests = async () => {
     try {
@@ -60,7 +59,6 @@ export default function ClientRequestsPage() {
       setRequests(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Error cargando solicitudes:", err);
-      setError("No se pudieron cargar las solicitudes.");
     } finally {
       setLoading(false);
     }
@@ -73,77 +71,78 @@ export default function ClientRequestsPage() {
   if (loading) {
     return (
       <div className="p-6 text-white">
-        <div className="card">
-          <p className="text-lg font-semibold">Cargando solicitudes...</p>
-          <p className="text-sm text-zinc-500 mt-2">
-            Obteniendo datos desde el servidor
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-red-400">
-          {error}
-        </div>
+        <p className="text-lg">Cargando solicitudes...</p>
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6 text-white max-w-5xl mx-auto">
+    <div className="p-6 text-white max-w-6xl mx-auto space-y-6">
+      
+      {/* HEADER */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold">Solicitudes</h1>
+          <h1 className="text-3xl font-bold">Solicitudes</h1>
           <p className="text-zinc-500 text-sm">
-            Historial completo de mantenimiento
+            Seguimiento en tiempo real de tus mantenimientos
           </p>
         </div>
 
-        <div className="bg-zinc-900 border border-zinc-800 px-4 py-2 rounded-lg text-sm">
-          Total: {requests.length}
+        <div className="flex gap-3">
+          <div className="bg-zinc-900 px-4 py-2 rounded-xl border border-zinc-800">
+            {requests.length} total
+          </div>
+
+          <Link
+            to="/request-maintenance"
+            className="bg-yellow-400 text-black px-5 py-2 rounded-xl font-semibold hover:bg-yellow-300 transition"
+          >
+            + Nueva
+          </Link>
         </div>
       </div>
 
+      {/* LISTA */}
       {requests.length === 0 ? (
-        <div className="card text-center py-10">
-          <p className="text-zinc-500">
-            No hay solicitudes todavía.
-          </p>
+        <div className="text-center text-zinc-500 py-20">
+          No tienes solicitudes aún
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="grid gap-4">
           {requests.map((r) => (
             <div
               key={r.id}
-              className="card flex flex-col md:flex-row justify-between gap-4"
+              className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col md:flex-row justify-between gap-5 hover:border-yellow-400/30 transition"
             >
-              <div className="space-y-2">
+              {/* INFO */}
+              <div className="space-y-3">
                 <div>
-                  <h2 className="text-lg font-semibold">
-                    {r.clientName || "Sin cliente"}
+                  <h2 className="text-xl font-semibold">
+                    {r.licensePlate ||
+                      r.equipments?.code ||
+                      r.equipments?.name ||
+                      "Solicitud"}
                   </h2>
-                  <p className="text-xs text-zinc-500">
-                    #{r.id}
-                  </p>
+                  <p className="text-xs text-zinc-500">ID: {r.id}</p>
                 </div>
 
-                <div className="text-sm text-zinc-400 space-y-1">
-                  <p><b>Patente:</b> {r.plate || "-"}</p>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm text-zinc-400">
+                  <p><b>Cliente:</b> {r.users?.name || "Cliente"}</p>
                   <p><b>Fecha:</b> {formatDate(r.createdAt)}</p>
-                  <p><b>Descripción:</b> {r.description || "-"}</p>
+                  <p><b>Tipo:</b> {r.type || "-"}</p>
                   <p><b>Prioridad:</b> {r.priority}</p>
-                  <p><b>Tipo:</b> {r.problemType}</p>
-                  <p><b>Mecánico:</b> {r.mechanicId || "Sin asignar"}</p>
+                  <p><b>Mecánico:</b> {r.mechanic?.name || "Sin asignar"}</p>
                 </div>
+
+                <p className="text-xs text-zinc-500 line-clamp-2">
+                  {r.description}
+                </p>
               </div>
 
-              <div className="flex flex-col items-start md:items-end gap-3">
+              {/* ACCIONES */}
+              <div className="flex flex-col justify-between items-end gap-3">
                 <span
-                  className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColor(
+                  className={`px-4 py-1 rounded-full text-xs font-semibold ${statusColor(
                     r.status
                   )}`}
                 >
@@ -152,9 +151,9 @@ export default function ClientRequestsPage() {
 
                 <Link
                   to={`/tracking/${r.id}`}
-                  className="bg-yellow-400 text-black px-4 py-2 rounded-lg text-sm font-semibold hover:bg-yellow-300 transition"
+                  className="bg-yellow-400 text-black px-5 py-2 rounded-xl font-semibold hover:bg-yellow-300 transition"
                 >
-                  Ver tracking
+                  Ver seguimiento →
                 </Link>
               </div>
             </div>

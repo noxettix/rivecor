@@ -16,8 +16,14 @@ function toBool(value, fallback = true) {
   if (value == null || value === '') return fallback;
 
   const raw = String(value).trim().toLowerCase();
-  if (['true', '1', 'si', 'sí', 'yes', 'activo'].includes(raw)) return true;
-  if (['false', '0', 'no', 'inactivo'].includes(raw)) return false;
+
+  if (['true', '1', 'si', 'sí', 'yes', 'activo', 'active'].includes(raw)) {
+    return true;
+  }
+
+  if (['false', '0', 'no', 'inactivo', 'inactive'].includes(raw)) {
+    return false;
+  }
 
   return fallback;
 }
@@ -25,34 +31,182 @@ function toBool(value, fallback = true) {
 function toNumber(value, fallback = 0) {
   if (value == null || value === '') return fallback;
 
-  const parsed = Number(String(value).replace(',', '.'));
+  const clean = String(value)
+    .replace(/\$/g, '')
+    .replace(/\./g, '')
+    .replace(',', '.')
+    .trim();
+
+  const parsed = Number(clean);
+
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function buildPayload(row = {}) {
-  const payload = {
-    brand: normalizeUpper(row.brand || row.marca),
-    model: normalizeText(row.model || row.modelo),
-    size: normalizeUpper(row.size || row.medida),
-    purchasePrice: toNumber(row.purchasePrice || row.precio || row.price, -1),
-    retread1Cost: toNumber(row.retread1Cost || row.recapado1 || row.recap1, 0),
-    retread2Cost: toNumber(row.retread2Cost || row.recapado2 || row.recap2, 0),
-    repairCost: toNumber(row.repairCost || row.reparacion || row.repair, 0),
-    depthNew: toNumber(row.depthNew || row.profundidad_nueva || row.depth_new, -1),
-    depthMin: toNumber(row.depthMin || row.profundidad_min || row.depth_min, -1),
-    active: toBool(row.active || row.activo, true),
-  };
+function pick(row, keys) {
+  for (const key of keys) {
+    if (row[key] !== undefined && row[key] !== null && row[key] !== '') {
+      return row[key];
+    }
+  }
 
-  return payload;
+  return '';
+}
+
+function buildPayload(row = {}) {
+  return {
+    brand: normalizeUpper(
+      pick(row, ['brand', 'Brand', 'marca', 'Marca', 'MARCA'])
+    ),
+
+    model: normalizeText(
+      pick(row, ['model', 'Model', 'modelo', 'Modelo', 'MODELO'])
+    ),
+
+    size: normalizeUpper(
+      pick(row, ['size', 'Size', 'medida', 'Medida', 'MEDIDA'])
+    ),
+
+    purchasePrice: toNumber(
+      pick(row, [
+        'purchasePrice',
+        'Purchase Price',
+        'precio',
+        'Precio',
+        'PRECIO',
+        'price',
+        'Price',
+      ]),
+      -1
+    ),
+
+    retread1Cost: toNumber(
+      pick(row, [
+        'retread1Cost',
+        'Retread 1',
+        'Recapado 1',
+        'recapado 1',
+        'recapado1',
+        'Recapado1',
+        'recap1',
+      ]),
+      0
+    ),
+
+    retread2Cost: toNumber(
+      pick(row, [
+        'retread2Cost',
+        'Retread 2',
+        'Recapado 2',
+        'recapado 2',
+        'recapado2',
+        'Recapado2',
+        'recap2',
+      ]),
+      0
+    ),
+
+    repairCost: toNumber(
+      pick(row, [
+        'repairCost',
+        'Repair Cost',
+        'Reparacion',
+        'Reparación',
+        'reparacion',
+        'reparación',
+        'repair',
+        'Repair',
+      ]),
+      0
+    ),
+
+    depthNew: toNumber(
+      pick(row, [
+        'depthNew',
+        'Depth new',
+        'Depth New',
+        'depth new',
+        'profundidad_nueva',
+        'Profundidad nueva',
+        'Profundidad Nueva',
+      ]),
+      -1
+    ),
+
+    depthMin: toNumber(
+      pick(row, [
+        'depthMin',
+        'Depth min',
+        'Depth Min',
+        'depth min',
+        'profundidad_min',
+        'Profundidad mínima',
+        'Profundidad minima',
+        'Profundidad Minima',
+      ]),
+      -1
+    ),
+
+    kmNew: toNumber(
+      pick(row, [
+        'kmNew',
+        'KM nuevo',
+        'Km nuevo',
+        'km nuevo',
+        'KM Nuevo',
+        'kilometraje nuevo',
+        'Kilometraje nuevo',
+      ]),
+      0
+    ),
+
+    kmRetread1: toNumber(
+      pick(row, [
+        'kmRetread1',
+        'KM recapado 1',
+        'Km recapado 1',
+        'km recapado 1',
+        'KM Recapado 1',
+        'kilometraje recapado 1',
+      ]),
+      0
+    ),
+
+    kmRetread2: toNumber(
+      pick(row, [
+        'kmRetread2',
+        'KM recapado 2',
+        'Km recapado 2',
+        'km recapado 2',
+        'KM Recapado 2',
+        'kilometraje recapado 2',
+      ]),
+      0
+    ),
+
+    active: toBool(
+      pick(row, ['active', 'Active', 'activo', 'Activo', 'ACTIVO']),
+      true
+    ),
+  };
 }
 
 function validatePayload(payload) {
   if (!payload.brand) return 'La marca es obligatoria';
   if (!payload.model) return 'El modelo es obligatorio';
   if (!payload.size) return 'La medida es obligatoria';
-  if (payload.purchasePrice < 0) return 'El precio de compra debe ser válido';
-  if (payload.depthNew <= 0) return 'La profundidad nueva debe ser mayor a 0';
-  if (payload.depthMin < 0) return 'La profundidad mínima debe ser válida';
+
+  if (payload.purchasePrice < 0) {
+    return 'El precio de compra debe ser válido';
+  }
+
+  if (payload.depthNew <= 0) {
+    return 'La profundidad nueva debe ser mayor a 0';
+  }
+
+  if (payload.depthMin < 0) {
+    return 'La profundidad mínima debe ser válida';
+  }
+
   if (payload.depthMin >= payload.depthNew) {
     return 'La profundidad mínima debe ser menor que la profundidad nueva';
   }
@@ -63,17 +217,16 @@ function validatePayload(payload) {
 const getAll = async (req, res) => {
   try {
     const items = await prisma.tireCatalog.findMany({
-      orderBy: [
-        { brand: 'asc' },
-        { model: 'asc' },
-        { size: 'asc' },
-      ],
+      orderBy: [{ brand: 'asc' }, { model: 'asc' }, { size: 'asc' }],
     });
 
     return res.json(items);
   } catch (error) {
     console.error('tireCatalog.getAll error:', error);
-    return res.status(500).json({ error: 'No se pudo obtener el catálogo' });
+    return res.status(500).json({
+      error: 'No se pudo obtener el catálogo',
+      details: error.message,
+    });
   }
 };
 
@@ -100,7 +253,10 @@ const createOne = async (req, res) => {
       });
     }
 
-    return res.status(500).json({ error: 'No se pudo crear el registro' });
+    return res.status(500).json({
+      error: 'No se pudo crear el registro',
+      details: error.message,
+    });
   }
 };
 
@@ -132,7 +288,10 @@ const updateOne = async (req, res) => {
       });
     }
 
-    return res.status(500).json({ error: 'No se pudo actualizar el registro' });
+    return res.status(500).json({
+      error: 'No se pudo actualizar el registro',
+      details: error.message,
+    });
   }
 };
 
@@ -150,28 +309,40 @@ const deleteOne = async (req, res) => {
       return res.status(404).json({ error: 'Registro no encontrado' });
     }
 
-    return res.status(500).json({ error: 'No se pudo eliminar el registro' });
+    return res.status(500).json({
+      error: 'No se pudo eliminar el registro',
+      details: error.message,
+    });
   }
 };
 
 const uploadExcel = async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: 'Debes subir un archivo Excel o CSV' });
+      return res.status(400).json({
+        error: 'Debes subir un archivo Excel o CSV',
+      });
     }
 
     const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
 
     if (!sheetName) {
-      return res.status(400).json({ error: 'El archivo no contiene hojas' });
+      return res.status(400).json({
+        error: 'El archivo no contiene hojas',
+      });
     }
 
     const sheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    const rows = XLSX.utils.sheet_to_json(sheet, {
+      defval: '',
+      raw: false,
+    });
 
     if (!Array.isArray(rows) || rows.length === 0) {
-      return res.status(400).json({ error: 'El archivo está vacío' });
+      return res.status(400).json({
+        error: 'El archivo está vacío',
+      });
     }
 
     const errors = [];
@@ -182,7 +353,11 @@ const uploadExcel = async (req, res) => {
       const validationError = validatePayload(payload);
 
       if (validationError) {
-        errors.push(`Fila ${index + 2}: ${validationError}`);
+        errors.push({
+          row: index + 2,
+          error: validationError,
+          data: row,
+        });
         return;
       }
 
@@ -213,11 +388,13 @@ const uploadExcel = async (req, res) => {
           where: { id: existing.id },
           data: row,
         });
+
         updated += 1;
       } else {
         await prisma.tireCatalog.create({
           data: row,
         });
+
         inserted += 1;
       }
     }
@@ -230,7 +407,11 @@ const uploadExcel = async (req, res) => {
     });
   } catch (error) {
     console.error('tireCatalog.uploadExcel error:', error);
-    return res.status(500).json({ error: 'No se pudo procesar el archivo' });
+
+    return res.status(500).json({
+      error: 'No se pudo procesar el archivo',
+      details: error.message,
+    });
   }
 };
 
@@ -253,18 +434,18 @@ const findCatalogMatch = async (req, res) => {
         ...(model ? { model: { equals: model, mode: 'insensitive' } } : {}),
         ...(size ? { size } : {}),
       },
-      orderBy: [
-        { brand: 'asc' },
-        { model: 'asc' },
-        { size: 'asc' },
-      ],
+      orderBy: [{ brand: 'asc' }, { model: 'asc' }, { size: 'asc' }],
       take: 20,
     });
 
     return res.json(items);
   } catch (error) {
     console.error('tireCatalog.findCatalogMatch error:', error);
-    return res.status(500).json({ error: 'No se pudo consultar el catálogo' });
+
+    return res.status(500).json({
+      error: 'No se pudo consultar el catálogo',
+      details: error.message,
+    });
   }
 };
 

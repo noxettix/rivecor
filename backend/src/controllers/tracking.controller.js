@@ -13,6 +13,30 @@ function getMechanicsModel() {
   return prisma.mechanics || prisma.mechanic;
 }
 
+function pickClientLat(request) {
+  return (
+    request.clientLat ??
+    request.latitude ??
+    request.lat ??
+    request.locationLat ??
+    request.requestLat ??
+    request.lastLat ??
+    null
+  );
+}
+
+function pickClientLng(request) {
+  return (
+    request.clientLng ??
+    request.longitude ??
+    request.lng ??
+    request.locationLng ??
+    request.requestLng ??
+    request.lastLng ??
+    null
+  );
+}
+
 const updateLocation = async (req, res) => {
   try {
     const { id } = req.params;
@@ -93,15 +117,19 @@ const getTrackingByRequest = async (req, res) => {
 
     let mechanic = form?.mechanics || null;
 
-    if (!mechanic && Mechanics && req.user?.role === 'OPERATOR') {
+    if (!mechanic && Mechanics && ['OPERATOR', 'MECHANIC'].includes(req.user?.role)) {
       mechanic = await Mechanics.findFirst({
         where: { userId: req.user.userId || req.user.id },
       });
     }
 
+    const clientLat = pickClientLat(request);
+    const clientLng = pickClientLng(request);
+
     return res.json({
       id: request.id,
       status: request.status,
+
       mechanic: mechanic
         ? {
             id: mechanic.id,
@@ -110,17 +138,27 @@ const getTrackingByRequest = async (req, res) => {
             email: mechanic.email || null,
           }
         : null,
+
       mechanicLat: request.lastLat ?? null,
       mechanicLng: request.lastLng ?? null,
       mechanicHeading: request.lastHeading ?? null,
       mechanicSpeed: request.lastSpeed ?? null,
       lastUpdate: request.lastUpdate ?? null,
+
+      clientLat: clientLat != null ? Number(clientLat) : null,
+      clientLng: clientLng != null ? Number(clientLng) : null,
+
       licensePlate:
+        request?.licensePlate ||
         request?.equipments?.licensePlate ||
         request?.equipments?.code ||
         request?.equipments?.name ||
         null,
-      unitType: request?.equipments?.type || null,
+
+      unitType:
+        request?.unitType ||
+        request?.equipments?.type ||
+        null,
     });
   } catch (e) {
     console.error('TRACKING GET ERROR:', e);

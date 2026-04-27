@@ -1,4 +1,5 @@
-const { prisma } = require('../lib/prisma');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 
 function parseNumber(value) {
   if (value === undefined || value === null || value === '') return null;
@@ -28,7 +29,6 @@ async function addLifecycleEvent(tx, stockTireId, event, fromStatus, toStatus, n
   });
 }
 
-// ─── GET /api/stock ──────────────────────────────────────────
 const getAll = async (req, res) => {
   try {
     const { lifecycle, size } = req.query;
@@ -39,52 +39,77 @@ const getAll = async (req, res) => {
         ...(size ? { size: { contains: size, mode: 'insensitive' } } : {}),
       },
       orderBy: [{ lifecycle: 'asc' }, { code: 'asc' }],
+      include: {
+        tire_lifecycle_events: {
+          orderBy: { performedAt: 'desc' },
+        },
+        tires: {
+          include: {
+            equipments: true,
+          },
+        },
+      },
     });
 
+    const normalized = await Promise.all(
+      tires.map(async (t) => ({
+        ...t,
+        events: t.tire_lifecycle_events || [],
+        installCount: await getInstallCount(prisma, t.id),
+      }))
+    );
+
     const summary = {
-      total: tires.length,
-      newAvailable: tires.filter((t) => t.lifecycle === 'NEW_AVAILABLE').length,
-      installed: tires.filter((t) => t.lifecycle === 'INSTALLED').length,
-      withdrawn: tires.filter((t) => t.lifecycle === 'WITHDRAWN').length,
-      inRepair: tires.filter((t) => t.lifecycle === 'IN_REPAIR').length,
-      repairedAvailable: tires.filter((t) => t.lifecycle === 'REPAIRED_AVAILABLE').length,
-      scrapped: tires.filter((t) => t.lifecycle === 'SCRAPPED').length,
-      availableTotal: tires.filter((t) =>
+      total: normalized.length,
+      newAvailable: normalized.filter((t) => t.lifecycle === 'NEW_AVAILABLE').length,
+      installed: normalized.filter((t) => t.lifecycle === 'INSTALLED').length,
+      withdrawn: normalized.filter((t) => t.lifecycle === 'WITHDRAWN').length,
+      inRepair: normalized.filter((t) => t.lifecycle === 'IN_REPAIR').length,
+      repairedAvailable: normalized.filter((t) => t.lifecycle === 'REPAIRED_AVAILABLE').length,
+      scrapped: normalized.filter((t) => t.lifecycle === 'SCRAPPED').length,
+      availableTotal: normalized.filter((t) =>
         ['NEW_AVAILABLE', 'REPAIRED_AVAILABLE'].includes(t.lifecycle)
       ).length,
     };
 
-    res.json({ tires, summary });
+    res.json({ tires: normalized, summary });
   } catch (err) {
     console.error('stock getAll error:', err);
     res.status(500).json({ error: err.message });
   }
 };
 
-// ─── GET /api/stock/:id ──────────────────────────────────────
 const getById = async (req, res) => {
   try {
     const tire = await prisma.stock_tires.findUnique({
       where: { id: req.params.id },
+      include: {
+        tire_lifecycle_events: {
+          orderBy: { performedAt: 'asc' },
+        },
+        tires: {
+          include: {
+            equipments: true,
+          },
+        },
+      },
     });
 
     if (!tire) {
       return res.status(404).json({ error: 'No encontrado' });
     }
 
-    const events = await prisma.tire_lifecycle_events.findMany({
-      where: { stockTireId: tire.id },
-      orderBy: { performedAt: 'asc' },
+    res.json({
+      ...tire,
+      events: tire.tire_lifecycle_events || [],
+      installCount: await getInstallCount(prisma, tire.id),
     });
-
-    res.json({ ...tire, events });
   } catch (err) {
     console.error('stock getById error:', err);
     res.status(500).json({ error: err.message });
   }
 };
 
-// ─── POST /api/stock ─────────────────────────────────────────
 const create = async (req, res) => {
   try {
     const {
@@ -107,7 +132,8 @@ const create = async (req, res) => {
     const created = [];
 
     for (let i = 0; i < qty; i++) {
-      const tireCode = qty > 1 ? `${code}-${String(i + 1).padStart(2, '0')}` : code;
+      const tireCode =
+        qty > 1 ? `${code}-${String(i + 1).padStart(2, '0')}` : code;
 
       const exists = await prisma.stock_tires.findUnique({
         where: { code: tireCode },
@@ -128,6 +154,7 @@ const create = async (req, res) => {
             purchasePrice: parseNumber(purchasePrice),
             purchaseDate: new Date(),
             notes: notes || null,
+            lifecycle: 'NEW_AVAILABLE',
           },
         });
 
@@ -137,7 +164,9 @@ const create = async (req, res) => {
           'PURCHASE',
           'NEW_AVAILABLE',
           'NEW_AVAILABLE',
-          `Ingreso a bodega${supplier ? ` — Proveedor: ${supplier}` : ''}${notes ? ` — ${notes}` : ''}`,
+          `Ingreso a bodega${supplier ? ` — Proveedor: ${supplier}` : ''}${
+            notes ? ` — ${notes}` : ''
+          }`,
           req.user?.email || req.user?.name || 'sistema'
         );
 
@@ -154,7 +183,6 @@ const create = async (req, res) => {
   }
 };
 
-// ─── POST /api/stock/:id/install ─────────────────────────────
 const install = async (req, res) => {
   try {
     const { equipmentId, position, salePrice, mechanicName, notes } = req.body;
@@ -177,9 +205,13 @@ const install = async (req, res) => {
       });
     }
 
-    const equipment = await prisma.equipment.findUnique({
+    const equipment = await prisma.equipments.findUnique({
       where: { id: equipmentId },
     });
+
+    if (!equipment) {
+      return res.status(404).json({ error: 'Equipo no encontrado' });
+    }
 
     const installCount = await getInstallCount(prisma, stockTire.id);
     const event = installCount > 0 ? 'REINSTALL' : 'INSTALL';
@@ -196,7 +228,10 @@ const install = async (req, res) => {
           purchasePrice: stockTire.purchasePrice,
           installDate: new Date(),
           status: 'OK',
-          notes: `Stock: ${stockTire.code}${salePrice ? ` · Venta: ${salePrice}` : ''}${mechanicName ? ` · Mecánico: ${mechanicName}` : ''}${notes ? ` · ${notes}` : ''}`,
+          isActive: true,
+          notes: `Stock: ${stockTire.code}${salePrice ? ` · Venta: ${salePrice}` : ''}${
+            mechanicName ? ` · Mecánico: ${mechanicName}` : ''
+          }${notes ? ` · ${notes}` : ''}`,
         },
       });
 
@@ -214,7 +249,9 @@ const install = async (req, res) => {
         event,
         stockTire.lifecycle,
         'INSTALLED',
-        `Equipo: ${equipment?.name || equipmentId}${position ? ` · Posición: ${position}` : ''}${notes ? ` · ${notes}` : ''}`,
+        `Equipo: ${equipment?.name || equipmentId}${position ? ` · Posición: ${position}` : ''}${
+          notes ? ` · ${notes}` : ''
+        }`,
         req.user?.email || req.user?.name || 'sistema'
       );
     });
@@ -229,7 +266,6 @@ const install = async (req, res) => {
   }
 };
 
-// ─── POST /api/stock/:id/withdraw ────────────────────────────
 const withdraw = async (req, res) => {
   try {
     const { equipmentName, position, notes } = req.body;
@@ -273,7 +309,9 @@ const withdraw = async (req, res) => {
         'WITHDRAW',
         'INSTALLED',
         'WITHDRAWN',
-        `${equipmentName ? `Equipo: ${equipmentName}` : ''}${position ? ` · Posición: ${position}` : ''}${notes ? ` · ${notes}` : ''}`,
+        `${equipmentName ? `Equipo: ${equipmentName}` : ''}${
+          position ? ` · Posición: ${position}` : ''
+        }${notes ? ` · ${notes}` : ''}`,
         req.user?.email || req.user?.name || 'sistema'
       );
     });
@@ -289,7 +327,6 @@ const withdraw = async (req, res) => {
   }
 };
 
-// ─── POST /api/stock/:id/start-repair ────────────────────────
 const startRepair = async (req, res) => {
   try {
     const { notes } = req.body;
@@ -303,10 +340,13 @@ const startRepair = async (req, res) => {
     }
 
     if (stockTire.lifecycle !== 'WITHDRAWN') {
-      return res.status(400).json({ error: 'El neumático debe estar retirado para reparar' });
+      return res
+        .status(400)
+        .json({ error: 'El neumático debe estar retirado para reparar' });
     }
 
     const installCount = await getInstallCount(prisma, stockTire.id);
+
     if (installCount >= 2) {
       return res.status(400).json({
         error: 'Este neumático ya fue instalado 2 veces — debe ir a desecho (REP)',
@@ -337,7 +377,6 @@ const startRepair = async (req, res) => {
   }
 };
 
-// ─── POST /api/stock/:id/finish-repair ───────────────────────
 const finishRepair = async (req, res) => {
   try {
     const { repairCost, notes } = req.body;
@@ -366,7 +405,9 @@ const finishRepair = async (req, res) => {
         'FINISH_REPAIR',
         'IN_REPAIR',
         'REPAIRED_AVAILABLE',
-        `${repairCost ? `Costo reparación: ${repairCost}` : ''}${notes ? ` · ${notes}` : ''}`,
+        `${repairCost ? `Costo reparación: ${repairCost}` : ''}${
+          notes ? ` · ${notes}` : ''
+        }`,
         req.user?.email || req.user?.name || 'sistema'
       );
     });
@@ -378,10 +419,10 @@ const finishRepair = async (req, res) => {
   }
 };
 
-// ─── POST /api/stock/:id/scrap ───────────────────────────────
 const scrap = async (req, res) => {
   try {
-    const { reason, notes } = req.body;
+    const { reason, notes, weight, disposalMethod, disposalCompany, certificate } =
+      req.body;
 
     const stockTire = await prisma.stock_tires.findUnique({
       where: { id: req.params.id },
@@ -410,6 +451,21 @@ const scrap = async (req, res) => {
         },
       });
 
+      await tx.rep_records.create({
+        data: {
+          stockTireId: stockTire.id,
+          tireId: stockTire.currentTireId || null,
+          year: new Date().getFullYear(),
+          month: new Date().getMonth() + 1,
+          quantity: 1,
+          weight: parseNumber(weight),
+          disposalMethod: disposalMethod || 'Desecho REP',
+          disposalCompany: disposalCompany || null,
+          certificate: certificate || null,
+          notes: notes || reason || 'Enviado a desecho REP',
+        },
+      });
+
       await addLifecycleEvent(
         tx,
         stockTire.id,
@@ -421,14 +477,13 @@ const scrap = async (req, res) => {
       );
     });
 
-    res.json({ message: 'Neumático enviado a desecho — registrar en REP' });
+    res.json({ message: 'Neumático enviado a desecho y registrado en REP' });
   } catch (err) {
     console.error('stock scrap error:', err);
     res.status(500).json({ error: err.message });
   }
 };
 
-// ─── GET /api/stock/available ────────────────────────────────
 const getAvailable = async (req, res) => {
   try {
     const { size } = req.query;
@@ -448,7 +503,6 @@ const getAvailable = async (req, res) => {
   }
 };
 
-// ─── GET /api/stock/next-code ────────────────────────────────
 const nextCode = async (req, res) => {
   try {
     const last = await prisma.stock_tires.findFirst({

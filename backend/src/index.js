@@ -68,6 +68,7 @@ app.use('/api', require('./routes/tracking.routes'));
 
 // ─── Catálogo de neumáticos ──────────────────────────────────
 app.use('/api', require('./routes/tireCatalog.routes'));
+app.use("/api/dashboard", require("./routes/dashboard.routes"));
 
 // ─── Dashboard admin overview ────────────────────────────────
 const { getAdminOverview } = require('./controllers/adminDashboard.controller');

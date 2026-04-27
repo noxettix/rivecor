@@ -155,11 +155,11 @@ model maintenance_requests {
   equipments        equipments         @relation(fields: [equipmentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   users             users              @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   maintenances      maintenances?
-  lastLat      Float?
-lastLng      Float?
-lastHeading  Float?
-lastSpeed    Float?
-lastUpdate   DateTime? @db.Timestamptz(6)
+  lastLat           Float?
+  lastLng           Float?
+  lastHeading       Float?
+  lastSpeed         Float?
+  lastUpdate        DateTime?          @db.Timestamptz(6)
 }
 
 model maintenance_tire_forms {
@@ -490,4 +490,31 @@ enum TireStatus {
   CRITICAL
   REPLACED
   RETIRED
+}
+
+model tireCatalog {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  brand String
+  model String
+  size  String
+
+  purchasePrice Float
+  retread1Cost  Float @default(0)
+  retread2Cost  Float @default(0)
+  repairCost    Float @default(0)
+
+  depthNew Float
+  depthMin Float @default(3)
+
+  kmNew      Int @default(0)
+  kmRetread1 Int @default(0)
+  kmRetread2 Int @default(0)
+
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([brand, model, size])
 }

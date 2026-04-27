@@ -147,11 +147,19 @@ function getTireModel() {
 function mapUnitTypeToEquipmentType(unitType) {
   const value = String(unitType || '').trim().toUpperCase();
 
+  if (value === 'TRUCK') return 'TRUCK';
   if (value === 'CAMION') return 'TRUCK';
+  if (value === 'CAMIÓN') return 'TRUCK';
+  if (value === 'VEHICLE') return 'PICKUP';
   if (value === 'VEHICULO') return 'PICKUP';
+  if (value === 'VEHÍCULO') return 'PICKUP';
+  if (value === 'PICKUP') return 'PICKUP';
+  if (value === 'VAN') return 'OTHER';
+  if (value === 'MACHINE') return 'OTHER';
   if (value === 'CARGADOR') return 'LOADER';
   if (value === 'EXCAVADORA') return 'EXCAVATOR';
   if (value === 'GRUA') return 'CRANE';
+  if (value === 'GRÚA') return 'CRANE';
   if (value === 'GRUA HORQUILLA') return 'FORKLIFT';
 
   return 'OTHER';
@@ -175,8 +183,15 @@ function normalizeRequest(request) {
 
   return {
     ...request,
-    licensePlate: request?.equipments?.code || request?.equipments?.name || null,
-    unitType: request?.equipments?.type || null,
+    licensePlate:
+      request?.licensePlate ||
+      request?.equipments?.code ||
+      request?.equipments?.name ||
+      null,
+    unitType:
+      request?.unitType ||
+      request?.equipments?.type ||
+      null,
     mechanic: assignedMechanic
       ? {
           id: assignedMechanic.id,
@@ -213,6 +228,8 @@ const createRequest = async (req, res) => {
       licensePlate,
       unitType,
       clientUrgency,
+      latitude,
+      longitude,
     } = req.body;
 
     let resolvedEquipmentId = equipmentId || null;
@@ -328,12 +345,24 @@ const createRequest = async (req, res) => {
       );
     }
 
+    const hasClientLocation =
+      latitude != null &&
+      longitude != null &&
+      !Number.isNaN(Number(latitude)) &&
+      !Number.isNaN(Number(longitude));
+
     const created = await MaintenanceRequest.create({
       data: {
         type: type || 'INSPECTION',
         priority: priority || 'NORMAL',
         description: finalDescriptionParts.join('\n'),
         status: 'PENDING',
+
+        // Ubicación inicial del cliente para tracking
+        lastLat: hasClientLocation ? Number(latitude) : null,
+        lastLng: hasClientLocation ? Number(longitude) : null,
+        lastUpdate: hasClientLocation ? new Date() : null,
+
         users: {
           connect: { id: req.user.id },
         },
@@ -380,7 +409,7 @@ const getRequests = async (req, res) => {
       ];
     }
 
-    if (req.user.role === 'OPERATOR') {
+    if (req.user.role === 'OPERATOR' || req.user.role === 'MECHANIC') {
       const mechanic = await resolveMechanicByUser(req.user.id);
 
       if (!mechanic) {
@@ -817,8 +846,8 @@ const getMyRequestHistory = async (req, res) => {
           : null,
         licensePlate: r?.equipments?.code || r?.equipments?.name || null,
         unitType: r?.equipments?.type || null,
-        mechanicLat: r?.maintenance_forms?.mechanics?.location?.lat ?? null,
-        mechanicLng: r?.maintenance_forms?.mechanics?.location?.lng ?? null,
+        mechanicLat: r?.lastLat ?? null,
+        mechanicLng: r?.lastLng ?? null,
       };
     });
 

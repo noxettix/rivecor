@@ -1,251 +1,267 @@
-const { prisma } = require('../lib/prisma');
+const { PrismaClient } = require("@prisma/client");
+const prisma = new PrismaClient();
 
-function getEquipmentModel() {
-  return prisma.equipment || prisma.equipments || null;
+function getDefaultPositions(type) {
+  const t = String(type || "").toUpperCase();
+
+  if (t === "TRUCK") {
+    return [
+      "DELANTERO IZQ",
+      "DELANTERO DER",
+      "TRASERO IZQ 1",
+      "TRASERO IZQ 2",
+      "TRASERO DER 1",
+      "TRASERO DER 2",
+    ];
+  }
+
+  if (t === "LOADER" || t === "EXCAVATOR" || t === "FORKLIFT") {
+    return ["DEL IZQ", "DEL DER", "TRA IZQ", "TRA DER"];
+  }
+
+  return ["DEL IZQ", "DEL DER", "TRA IZQ", "TRA DER"];
 }
 
-function getTiresModel() {
-  return prisma.tires || prisma.tire || null;
-}
+function computeEquipmentStatus(equipment) {
+  const tires = equipment.tires || [];
 
-function getCompaniesModel() {
-  return prisma.company || prisma.companies || null;
-}
+  const critical = tires.filter((t) => t.status === "CRITICAL").length;
+  const warning = tires.filter((t) => t.status === "WARNING").length;
 
-function getMaintenanceRequestsModel() {
-  return prisma.maintenanceRequests || prisma.maintenance_requests || null;
-}
-
-function getTireInspectionsModel() {
-  return prisma.inspections || prisma.tire_inspections || null;
-}
-
-function noModelError(name) {
-  return new Error(`Modelo Prisma no disponible: ${name}`);
-}
-
-function buildEquipmentStatus(eq, tires) {
-  const criticalTires = tires.filter((t) => t.status === 'CRITICAL').length;
-  const warningTires = tires.filter((t) => t.status === 'WARNING').length;
-
-  const overallStatus =
-    criticalTires > 0
-      ? 'CRITICAL'
-      : warningTires > 0
-      ? 'WARNING'
-      : 'OK';
-
-  return {
-    ...eq,
-    tires,
-    criticalTires,
-    warningTires,
-    overallStatus,
-  };
+  if (critical > 0) return "CRITICAL";
+  if (warning > 0) return "WARNING";
+  return "OK";
 }
 
 const getAll = async (req, res) => {
   try {
-    const Equipment = getEquipmentModel();
-    const Tires = getTiresModel();
-    const Companies = getCompaniesModel();
+    const where = {
+      isActive: true,
+    };
 
-    if (!Equipment) throw noModelError('equipment/equipments');
-    if (!Tires) throw noModelError('tire/tires');
+    if (req.user?.role === "CLIENT" && req.user?.companyId) {
+      where.companyId = req.user.companyId;
+    }
 
-    const where =
-      req.user.role === 'CLIENT'
-        ? { companyId: req.user.companyId, isActive: true }
-        : { isActive: true };
-
-    const equipments = await Equipment.findMany({
+    const equipments = await prisma.equipments.findMany({
       where,
-      orderBy: { name: 'asc' },
+      orderBy: {
+        createdAt: "desc",
+      },
+      include: {
+        companies: true,
+        tires: true,
+      },
     });
 
-    const result = await Promise.all(
-      equipments.map(async (eq) => {
-        const tires = await Tires.findMany({
-          where: {
-            equipmentId: eq.id,
-            isActive: true,
-          },
-          orderBy: { position: 'asc' },
-        });
+    const data = equipments.map((eq) => ({
+      ...eq,
+      overallStatus: computeEquipmentStatus(eq),
+      tiresCount: eq.tires?.length || 0,
+      criticalTires: eq.tires?.filter((t) => t.status === "CRITICAL").length || 0,
+      warningTires: eq.tires?.filter((t) => t.status === "WARNING").length || 0,
+    }));
 
-        let company = null;
-        if (Companies && eq.companyId) {
-          company = await Companies.findUnique({
-            where: { id: eq.companyId },
-            select: { id: true, name: true },
-          });
-        }
-
-        const enriched = buildEquipmentStatus(eq, tires);
-        return {
-          ...enriched,
-          company,
-        };
-      })
-    );
-
-    res.json(result);
+    res.json(data);
   } catch (e) {
-    console.error('equipments getAll error:', e);
+    console.error("getAll equipments error:", e);
     res.status(500).json({ error: e.message });
   }
 };
 
 const getById = async (req, res) => {
   try {
-    const Equipment = getEquipmentModel();
-    const Tires = getTiresModel();
-    const Companies = getCompaniesModel();
-    const MaintenanceRequests = getMaintenanceRequestsModel();
-    const TireInspections = getTireInspectionsModel();
-
-    if (!Equipment) throw noModelError('equipment/equipments');
-    if (!Tires) throw noModelError('tire/tires');
-
-    const eq = await Equipment.findUnique({
-      where: { id: req.params.id },
-    });
-
-    if (!eq) {
-      return res.status(404).json({ error: 'No encontrado' });
-    }
-
-    if (req.user.role === 'CLIENT' && eq.companyId !== req.user.companyId) {
-      return res.status(403).json({ error: 'Sin acceso' });
-    }
-
-    const tires = await Tires.findMany({
+    const equipment = await prisma.equipments.findUnique({
       where: {
-        equipmentId: eq.id,
-        isActive: true,
+        id: req.params.id,
       },
-      orderBy: { position: 'asc' },
+      include: {
+        companies: true,
+        tires: {
+          orderBy: {
+            position: "asc",
+          },
+          include: {
+            tire_inspections: {
+              take: 5,
+              orderBy: {
+                inspectedAt: "desc",
+              },
+            },
+          },
+        },
+        maintenance_requests: {
+          orderBy: {
+            createdAt: "desc",
+          },
+          take: 10,
+        },
+      },
     });
 
-    const tiresWithInspections = await Promise.all(
-      tires.map(async (tire) => {
-        let inspections = [];
-
-        if (TireInspections) {
-          inspections = await TireInspections.findMany({
-            where: { tireId: tire.id },
-            take: 3,
-            orderBy: { inspectedAt: 'desc' },
-          });
-        }
-
-        return {
-          ...tire,
-          inspections,
-        };
-      })
-    );
-
-    let company = null;
-    if (Companies && eq.companyId) {
-      company = await Companies.findUnique({
-        where: { id: eq.companyId },
-      });
+    if (!equipment) {
+      return res.status(404).json({ error: "Equipo no encontrado" });
     }
 
-    let maintenanceRequests = [];
-    if (MaintenanceRequests) {
-      maintenanceRequests = await MaintenanceRequests.findMany({
-        where: { equipmentId: eq.id },
-        take: 5,
-        orderBy: { createdAt: 'desc' },
-      });
+    if (
+      req.user?.role === "CLIENT" &&
+      req.user?.companyId &&
+      equipment.companyId !== req.user.companyId
+    ) {
+      return res.status(403).json({ error: "Sin acceso a este equipo" });
     }
-
-    const enriched = buildEquipmentStatus(eq, tiresWithInspections);
 
     res.json({
-      ...enriched,
-      company,
-      maintenanceRequests,
+      ...equipment,
+      overallStatus: computeEquipmentStatus(equipment),
+      tiresCount: equipment.tires?.length || 0,
+      criticalTires:
+        equipment.tires?.filter((t) => t.status === "CRITICAL").length || 0,
+      warningTires:
+        equipment.tires?.filter((t) => t.status === "WARNING").length || 0,
     });
   } catch (e) {
-    console.error('equipments getById error:', e);
+    console.error("getById equipment error:", e);
     res.status(500).json({ error: e.message });
   }
 };
 
 const create = async (req, res) => {
   try {
-    const Equipment = getEquipmentModel();
-    const Companies = getCompaniesModel();
+    const {
+      companyId,
+      code,
+      name,
+      type,
+      brand,
+      model,
+      year,
+      licensePlate,
+      location,
+    } = req.body;
 
-    if (!Equipment) throw noModelError('equipment/equipments');
+    if (!companyId) {
+      return res.status(400).json({ error: "companyId es requerido" });
+    }
 
-    const eq = await Equipment.create({
-      data: req.body,
-    });
-
-    let company = null;
-    if (Companies && eq.companyId) {
-      company = await Companies.findUnique({
-        where: { id: eq.companyId },
+    if (!code || !name || !type) {
+      return res.status(400).json({
+        error: "code, name y type son requeridos",
       });
     }
 
+    const equipment = await prisma.equipments.create({
+      data: {
+        companyId,
+        code: String(code).trim().toUpperCase(),
+        name: String(name).trim(),
+        type,
+        brand: brand || null,
+        model: model || null,
+        year: year ? Number(year) : null,
+        licensePlate: licensePlate || null,
+        location: location || null,
+        isActive: true,
+      },
+    });
+
+    const positions = getDefaultPositions(type);
+
+    await prisma.tires.createMany({
+      data: positions.map((position) => ({
+        equipmentId: equipment.id,
+        position,
+        brand: null,
+        model: null,
+        size: null,
+        currentDepth: null,
+        initialDepth: null,
+        pressure: null,
+        recommendedPressure: null,
+        purchasePrice: null,
+        status: "OK",
+        isActive: true,
+      })),
+    });
+
+    const created = await prisma.equipments.findUnique({
+      where: {
+        id: equipment.id,
+      },
+      include: {
+        companies: true,
+        tires: true,
+      },
+    });
+
     res.status(201).json({
-      ...eq,
-      company,
-      tires: [],
-      criticalTires: 0,
-      warningTires: 0,
-      overallStatus: 'OK',
+      ...created,
+      overallStatus: computeEquipmentStatus(created),
+      tiresCount: created.tires?.length || 0,
     });
   } catch (e) {
-    console.error('equipments create error:', e);
+    console.error("create equipment error:", e);
     res.status(500).json({ error: e.message });
   }
 };
 
 const update = async (req, res) => {
   try {
-    const Equipment = getEquipmentModel();
-    const Companies = getCompaniesModel();
-    const Tires = getTiresModel();
+    const {
+      code,
+      name,
+      type,
+      brand,
+      model,
+      year,
+      licensePlate,
+      location,
+      isActive,
+    } = req.body;
 
-    if (!Equipment) throw noModelError('equipment/equipments');
-
-    const eq = await Equipment.update({
-      where: { id: req.params.id },
-      data: req.body,
+    const existing = await prisma.equipments.findUnique({
+      where: {
+        id: req.params.id,
+      },
+      include: {
+        tires: true,
+      },
     });
 
-    let company = null;
-    if (Companies && eq.companyId) {
-      company = await Companies.findUnique({
-        where: { id: eq.companyId },
-      });
+    if (!existing) {
+      return res.status(404).json({ error: "Equipo no encontrado" });
     }
 
-    let tires = [];
-    if (Tires) {
-      tires = await Tires.findMany({
-        where: {
-          equipmentId: eq.id,
-          isActive: true,
-        },
-        orderBy: { position: 'asc' },
-      });
-    }
+    const data = {};
 
-    const enriched = buildEquipmentStatus(eq, tires);
+    if (code !== undefined) data.code = String(code).trim().toUpperCase();
+    if (name !== undefined) data.name = String(name).trim();
+    if (type !== undefined) data.type = type;
+    if (brand !== undefined) data.brand = brand || null;
+    if (model !== undefined) data.model = model || null;
+    if (year !== undefined) data.year = year ? Number(year) : null;
+    if (licensePlate !== undefined) data.licensePlate = licensePlate || null;
+    if (location !== undefined) data.location = location || null;
+    if (isActive !== undefined) data.isActive = Boolean(isActive);
+
+    const updated = await prisma.equipments.update({
+      where: {
+        id: req.params.id,
+      },
+      data,
+      include: {
+        companies: true,
+        tires: true,
+      },
+    });
 
     res.json({
-      ...enriched,
-      company,
+      ...updated,
+      overallStatus: computeEquipmentStatus(updated),
+      tiresCount: updated.tires?.length || 0,
     });
   } catch (e) {
-    console.error('equipments update error:', e);
+    console.error("update equipment error:", e);
     res.status(500).json({ error: e.message });
   }
 };

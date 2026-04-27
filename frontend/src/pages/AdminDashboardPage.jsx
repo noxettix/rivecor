@@ -154,32 +154,27 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     const load = async () => {
-      try {
-        const [clientsRes, mechanicsRes, equipmentsRes, stockRes] = await Promise.all([
-          api.get('/clients').catch(() => ({ data: [] })),
-          api.get('/mechanics').catch(() => ({ data: [] })),
-          api.get('/equipments').catch(() => ({ data: [] })),
-          api.get('/stock').catch(() => ({ data: { tires: [], summary: {} } })),
-        ])
+  try {
+    const { data } = await api.get('/dashboard')
 
-        setClients(Array.isArray(clientsRes?.data) ? clientsRes.data : [])
-        setMechanics(Array.isArray(mechanicsRes?.data) ? mechanicsRes.data : [])
-        setEquipments(Array.isArray(equipmentsRes?.data) ? equipmentsRes.data : [])
-        setStock(
-          stockRes?.data && typeof stockRes.data === 'object'
-            ? stockRes.data
-            : { tires: [], summary: {} }
-        )
-      } catch (err) {
-        console.error('AdminDashboard load error:', err)
-        setClients([])
-        setMechanics([])
-        setEquipments([])
-        setStock({ tires: [], summary: {} })
-      } finally {
-        setLoading(false)
-      }
-    }
+    setClients(Array.isArray(data?.clients) ? data.clients : [])
+    setMechanics(Array.isArray(data?.mechanics) ? data.mechanics : [])
+    setEquipments(Array.isArray(data?.equipments) ? data.equipments : [])
+    setStock(
+      data?.stock && typeof data.stock === 'object'
+        ? data.stock
+        : { tires: [], summary: {} }
+    )
+  } catch (err) {
+    console.error('AdminDashboard load error:', err)
+    setClients([])
+    setMechanics([])
+    setEquipments([])
+    setStock({ tires: [], summary: {} })
+  } finally {
+    setLoading(false)
+  }
+}
 
     load()
   }, [])

@@ -27,15 +27,27 @@ export default function TireCatalogPage() {
   }, [])
 
   const handleUpload = async () => {
+  try {
     if (!file) return alert('Selecciona archivo')
 
     const formData = new FormData()
     formData.append('file', file)
 
-    await api.post('/admin/tire-catalog/upload', formData)
+    await api.post('/admin/tire-catalog/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+
+    alert('Subido correctamente')
     setFile(null)
     load()
+
+  } catch (err) {
+    console.log('ERROR BACKEND:', err.response?.data)
+    alert(err.response?.data?.error || 'Error subiendo archivo')
   }
+}
 
   const handleCreate = async () => {
     await api.post('/admin/tire-catalog', {
@@ -114,20 +126,56 @@ export default function TireCatalogPage() {
       {loading ? 'Cargando...' : (
         <div className="space-y-2">
           {items.map(i => (
-            <div key={i.id} className="bg-zinc-900 p-3 rounded-lg flex justify-between">
-              <div>
-                <p>{i.brand} {i.model}</p>
-                <p className="text-sm text-zinc-400">{i.size}</p>
-              </div>
+            <div key={i.id} className="bg-zinc-900 p-4 rounded-xl border border-zinc-800">
 
-              <div className="flex items-center gap-4">
-                <p>${i.purchasePrice}</p>
+  {/* Header */}
+  <div className="flex justify-between items-center">
+    <div>
+      <p className="font-bold text-white">
+        {i.brand} {i.model}
+      </p>
+      <p className="text-sm text-zinc-400">
+        {i.size}
+      </p>
+    </div>
 
-                <button onClick={() => handleDelete(i.id)}>
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            </div>
+    <div className="flex items-center gap-4">
+      <p className="font-bold text-green-400">
+        ${i.purchasePrice}
+      </p>
+
+      <button onClick={() => handleDelete(i.id)}>
+        <Trash2 size={16} />
+      </button>
+    </div>
+  </div>
+
+  {/* Detalle técnico */}
+  <div className="grid grid-cols-4 gap-3 mt-3 text-xs text-zinc-400">
+
+    <div>
+      <p className="text-zinc-500">Depth</p>
+      <p>{i.depthNew} → {i.depthMin}</p>
+    </div>
+
+    <div>
+      <p className="text-zinc-500">Recapados</p>
+      <p>{i.retread1Cost} / {i.retread2Cost}</p>
+    </div>
+
+    <div>
+      <p className="text-zinc-500">KM</p>
+      <p>{i.kmNew}</p>
+    </div>
+
+    <div>
+      <p className="text-zinc-500">Reparación</p>
+      <p>{i.repairCost}</p>
+    </div>
+
+  </div>
+
+</div>
           ))}
         </div>
       )}

@@ -5,9 +5,6 @@ const path = require('path');
 
 const prisma = new PrismaClient();
 
-// ─────────────────────────────────────────────────────────────
-// Análisis de costo por neumático
-// ─────────────────────────────────────────────────────────────
 function computeCostAnalysis(tire) {
   const purchasePrice = Number(tire.purchasePrice || 0);
   const maintenanceCost = Number(tire.maintenanceCost || 0);
@@ -50,7 +47,8 @@ function computeCostAnalysis(tire) {
     recommendedPressure > 0 && currentPressure > 0
       ? Math.abs(
           Math.round(
-            ((recommendedPressure - currentPressure) / recommendedPressure) * 100
+            ((recommendedPressure - currentPressure) / recommendedPressure) *
+              100
           )
         )
       : 0;
@@ -83,22 +81,19 @@ function computeCostAnalysis(tire) {
   };
 }
 
-// ─────────────────────────────────────────────────────────────
-// Recopila datos del reporte
-// ─────────────────────────────────────────────────────────────
 async function collectReportData(companyId) {
   const [equipments, maintenanceForms, mechanics] = await Promise.all([
-    prisma.equipment.findMany({
+    prisma.equipments.findMany({
       where: {
         ...(companyId ? { companyId } : {}),
         isActive: true,
       },
       include: {
-        company: { select: { name: true } },
+        companies: { select: { name: true } },
         tires: {
           where: { isActive: true },
           include: {
-            inspections: {
+            tire_inspections: {
               orderBy: { inspectedAt: 'desc' },
               take: 1,
             },
@@ -108,27 +103,27 @@ async function collectReportData(companyId) {
       orderBy: { name: 'asc' },
     }),
 
-    prisma.maintenanceForm.findMany({
+    prisma.maintenance_forms.findMany({
       where: {
         status: 'COMPLETED',
-        ...(companyId ? { equipment: { companyId } } : {}),
+        ...(companyId ? { equipments: { companyId } } : {}),
       },
       include: {
-        equipment: {
+        equipments: {
           select: {
             name: true,
             code: true,
             location: true,
           },
         },
-        mechanic: {
+        mechanics: {
           select: {
             name: true,
           },
         },
-        tires: {
+        maintenance_tire_forms: {
           include: {
-            tire: {
+            tires: {
               select: {
                 position: true,
                 brand: true,
@@ -142,15 +137,23 @@ async function collectReportData(companyId) {
       take: 200,
     }),
 
-    prisma.mechanic.findMany({
+    prisma.mechanics.findMany({
       where: {
         isActive: true,
-        ...(companyId ? { companyId } : {}),
+        ...(companyId
+          ? {
+              mechanic_companies: {
+                some: {
+                  companyId,
+                },
+              },
+            }
+          : {}),
       },
       include: {
         maintenances: {
           include: {
-            tires: true,
+            maintenance_tires: true,
           },
           orderBy: {
             performedAt: 'desc',
@@ -162,7 +165,7 @@ async function collectReportData(companyId) {
   ]);
 
   const companyName =
-    equipments?.[0]?.company?.name ||
+    equipments?.[0]?.companies?.name ||
     (companyId ? 'Empresa' : 'Reporte General');
 
   const costs = [];
@@ -191,7 +194,7 @@ async function collectReportData(companyId) {
       id: eq.id,
       name: eq.name || '',
       code: eq.code || '',
-      company: eq.company?.name || '',
+      company: eq.companies?.name || '',
       type: eq.type || '',
       brand: eq.brand || '',
       model: eq.model || '',
@@ -217,16 +220,16 @@ async function collectReportData(companyId) {
     maintenances: maintenanceForms.map((f) => ({
       id: f.id,
       type: f.type || '',
-      equipmentName: f.equipment?.name || '',
-      equipmentCode: f.equipment?.code || '',
-      mechanicName: f.mechanic?.name || '',
+      equipmentName: f.equipments?.name || '',
+      equipmentCode: f.equipments?.code || '',
+      mechanicName: f.mechanics?.name || '',
       performedAt: f.performedAt || null,
       observations: f.observations || '',
       nextScheduled: f.nextScheduled || null,
-      tiresWorked: (f.tires || []).map((t) => ({
-        position: t.tire?.position || '',
-        brand: t.tire?.brand || '',
-        size: t.tire?.size || '',
+      tiresWorked: (f.maintenance_tire_forms || []).map((t) => ({
+        position: t.tires?.position || '',
+        brand: t.tires?.brand || '',
+        size: t.tires?.size || '',
         action: t.action || '',
         depthBefore: t.depthBefore,
         depthAfter: t.depthAfter,
@@ -240,8 +243,9 @@ async function collectReportData(companyId) {
       const maintenances = m.maintenances || [];
 
       const totalMaintenances = maintenances.length;
+
       const totalTiresWorked = maintenances.reduce(
-        (sum, mn) => sum + (mn.tires?.length || 0),
+        (sum, mn) => sum + (mn.maintenance_tires?.length || 0),
         0
       );
 
@@ -284,9 +288,6 @@ async function collectReportData(companyId) {
   };
 }
 
-// ─────────────────────────────────────────────────────────────
-// Genera Excel usando Python
-// ─────────────────────────────────────────────────────────────
 function generateExcel(payload, sheetFilter = null) {
   return new Promise((resolve, reject) => {
     const timestamp = Date.now();
@@ -388,9 +389,6 @@ function generateExcel(payload, sheetFilter = null) {
   });
 }
 
-// ─────────────────────────────────────────────────────────────
-// Descarga completa
-// ─────────────────────────────────────────────────────────────
 const downloadFull = async (req, res) => {
   try {
     const companyId =
@@ -417,9 +415,6 @@ const downloadFull = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────
-// Descarga por hoja
-// ─────────────────────────────────────────────────────────────
 async function downloadSheet(req, res, sheet, filename) {
   try {
     const companyId =

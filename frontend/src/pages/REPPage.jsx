@@ -1,231 +1,225 @@
-import { useEffect, useMemo, useState } from 'react'
-import api from '../services/api'
-import { Plus, FileText, ExternalLink, Check } from 'lucide-react'
-
-const REASON_MAP = {
-  WEAR: 'Desgaste normal',
-  DAMAGE: 'Daño / accidente',
-  PRESSURE: 'Falla por presión',
-  OTHER: 'Otro',
-}
-
-const CONDITION_MAP = {
-  WORN: 'Desgastado',
-  DAMAGED: 'Dañado',
-  REPAIRABLE: 'Reparable',
-}
-
-const STATUS_MAP = {
-  REGISTERED: 'Registrado',
-  SENT_TO_DISPOSAL: 'Enviado',
-  CERTIFIED: 'Certificado',
-}
-
-const STATUS_CLS = {
-  REGISTERED: 'badge-warning',
-  SENT_TO_DISPOSAL:
-    'inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 text-xs font-medium',
-  CERTIFIED: 'badge-ok',
-}
-
-function safeJsonParse(value) {
-  try {
-    return JSON.parse(value)
-  } catch {
-    return null
-  }
-}
-
-function getStoredUser() {
-  const candidates = [
-    localStorage.getItem('user'),
-    localStorage.getItem('authUser'),
-    localStorage.getItem('rivecor_user'),
-    sessionStorage.getItem('user'),
-    sessionStorage.getItem('authUser'),
-    sessionStorage.getItem('rivecor_user'),
-  ]
-
-  for (const raw of candidates) {
-    if (!raw) continue
-    const parsed = safeJsonParse(raw)
-    if (parsed && typeof parsed === 'object') return parsed
-  }
-
-  return null
-}
+import { useEffect, useMemo, useState } from "react";
+import api from "../services/api";
+import {
+  Plus,
+  FileText,
+  ExternalLink,
+  Check,
+  X,
+  Recycle,
+} from "lucide-react";
+import { useAuth } from "../context/AuthContext";
 
 function normalizeArray(value) {
-  return Array.isArray(value) ? value : []
+  return Array.isArray(value) ? value : [];
 }
 
 function initialForm() {
   return {
-    tireId: '',
-    equipmentId: '',
-    reason: 'WEAR',
-    condition: 'WORN',
-    weightKg: '',
-    disposalPoint: '',
-    disposalEntity: '',
-    invoiceNumber: '',
-    notes: '',
+    equipmentId: "",
+    tireId: "",
+    year: new Date().getFullYear(),
+    month: new Date().getMonth() + 1,
+    quantity: 1,
+    weight: "",
+    disposalMethod: "",
+    disposalCompany: "",
+    certificate: "",
+    notes: "",
+  };
+}
+
+function formatDate(date) {
+  if (!date) return "Sin fecha";
+  try {
+    return new Date(date).toLocaleDateString("es-CL");
+  } catch {
+    return "Sin fecha";
   }
 }
 
 export default function REPPage() {
-  const storedUser = getStoredUser()
-  const role = storedUser?.role || storedUser?.user?.role || null
-  const isAdmin = role ? role === 'ADMIN' || role === 'OPERATOR' : true
+  const { user } = useAuth();
 
-  const [records, setRecords] = useState([])
-  const [equipments, setEquipments] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [showForm, setShowForm] = useState(false)
-  const [year, setYear] = useState(new Date().getFullYear())
-  const [form, setForm] = useState(initialForm())
-  const [tires, setTires] = useState([])
-  const [submitting, setSubmitting] = useState(false)
-  const [loadingTires, setLoadingTires] = useState(false)
+  const isAdmin =
+    user?.role === "ADMIN" ||
+    user?.role === "OPERATOR" ||
+    user?.role === "MECHANIC";
+
+  const [records, setRecords] = useState([]);
+  const [equipments, setEquipments] = useState([]);
+  const [tires, setTires] = useState([]);
+
+  const [loading, setLoading] = useState(true);
+  const [loadingTires, setLoadingTires] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [error, setError] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [form, setForm] = useState(initialForm());
 
   const load = async () => {
-    setLoading(true)
-    setError('')
+    setLoading(true);
+    setError("");
 
     try {
       const [repRes, eqRes] = await Promise.allSettled([
-        api.get('/rep'),
-        api.get('/equipments'),
-      ])
+        api.get("/rep"),
+        api.get("/equipments"),
+      ]);
 
-      if (repRes.status === 'fulfilled') {
-        setRecords(normalizeArray(repRes.value?.data))
+      if (repRes.status === "fulfilled") {
+        setRecords(normalizeArray(repRes.value?.data));
       } else {
-        console.error('Error cargando /rep:', repRes.reason)
-        setRecords([])
-        setError('No se pudo cargar el registro REP.')
+        console.error("Error cargando /rep:", repRes.reason);
+        setRecords([]);
+        setError("No se pudo conectar con el módulo REP.");
       }
 
-      if (eqRes.status === 'fulfilled') {
-        setEquipments(normalizeArray(eqRes.value?.data))
+      if (eqRes.status === "fulfilled") {
+        setEquipments(normalizeArray(eqRes.value?.data));
       } else {
-        console.error('Error cargando /equipments:', eqRes.reason)
-        setEquipments([])
+        console.error("Error cargando /equipments:", eqRes.reason);
+        setEquipments([]);
       }
     } catch (err) {
-      console.error('Error general en REPPage:', err)
-      setRecords([])
-      setEquipments([])
-      setError('Ocurrió un error al cargar la vista REP.')
+      console.error("Error general REP:", err);
+      setRecords([]);
+      setEquipments([]);
+      setError("Ocurrió un error cargando REP.");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
-
-  useEffect(() => {
-    load()
-  }, [])
+  };
 
   const loadTires = async (equipmentId) => {
     if (!equipmentId) {
-      setTires([])
-      return
+      setTires([]);
+      return;
     }
 
-    setLoadingTires(true)
+    setLoadingTires(true);
 
     try {
-      const { data } = await api.get(`/tires/equipment/${equipmentId}`)
-      setTires(normalizeArray(data))
+      const { data } = await api.get(`/tires/equipment/${equipmentId}`);
+      setTires(normalizeArray(data));
     } catch (err) {
-      console.error('Error cargando neumáticos del equipo:', err)
-      setTires([])
-      alert('No se pudieron cargar los neumáticos del equipo.')
+      console.error("Error cargando neumáticos:", err?.response?.data || err);
+      setTires([]);
+      alert("No se pudieron cargar los neumáticos del equipo.");
     } finally {
-      setLoadingTires(false)
+      setLoadingTires(false);
     }
-  }
+  };
 
-  const submit = async (e) => {
-    e.preventDefault()
+  useEffect(() => {
+    load();
+  }, []);
 
-    if (!form.tireId || !form.equipmentId) {
-      alert('Selecciona equipo y neumático')
-      return
-    }
-
-    setSubmitting(true)
-
-    try {
-      await api.post('/rep', {
-        ...form,
-        weightKg: form.weightKg === '' ? null : Number(form.weightKg),
-      })
-
-      setShowForm(false)
-      setForm(initialForm())
-      setTires([])
-      load()
-    } catch (err) {
-      console.error('Error registrando REP:', err)
-      alert(err?.response?.data?.error || 'Error')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  const openReport = () => {
-    window.open(`/api/rep/report?year=${year}`, '_blank')
-  }
+  const filteredRecords = useMemo(() => {
+    return records.filter((r) => Number(r.year) === Number(year));
+  }, [records, year]);
 
   const totalWeight = useMemo(() => {
-    return records.reduce((sum, r) => sum + Number(r?.weightKg || 0), 0)
-  }, [records])
+    return filteredRecords.reduce((sum, r) => sum + Number(r?.weight || 0), 0);
+  }, [filteredRecords]);
 
-  const totalRegistered = records.filter((r) => r.status === 'REGISTERED').length
-  const totalCertified = records.filter((r) => r.status === 'CERTIFIED').length
+  const totalQuantity = useMemo(() => {
+    return filteredRecords.reduce(
+      (sum, r) => sum + Number(r?.quantity || 0),
+      0
+    );
+  }, [filteredRecords]);
+
+  const submit = async (e) => {
+    e.preventDefault();
+
+    if (!form.tireId) {
+      alert("Selecciona un neumático.");
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      await api.post("/rep", {
+        tireId: form.tireId,
+        year: Number(form.year),
+        month: Number(form.month),
+        quantity: Number(form.quantity || 1),
+        weight: form.weight === "" ? null : Number(form.weight),
+        disposalMethod: form.disposalMethod || null,
+        disposalCompany: form.disposalCompany || null,
+        certificate: form.certificate || null,
+        notes: form.notes || null,
+      });
+
+      setShowForm(false);
+      setForm(initialForm());
+      setTires([]);
+      await load();
+    } catch (err) {
+      console.error("Error registrando REP:", err?.response?.data || err);
+      alert(err?.response?.data?.error || "No se pudo registrar el retiro REP.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const openReport = async () => {
+    try {
+      const res = await api.get(`/rep/report?year=${year}`, {
+        responseType: "blob",
+      });
+
+      const blob = new Blob([res.data], { type: "text/html" });
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, "_blank");
+    } catch (err) {
+      console.error("Error abriendo reporte:", err?.response?.data || err);
+      alert("No se pudo abrir el reporte REP.");
+    }
+  };
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-5">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+    <div className="p-6 max-w-6xl mx-auto space-y-6 text-white">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-xl font-semibold text-white">Registro REP</h1>
-          <p className="text-sm text-zinc-500 mt-0.5">
+          <h1 className="text-3xl font-bold">Registro REP</h1>
+          <p className="text-sm text-zinc-500 mt-1">
             Ley 20.920 — Disposición final de neumáticos
           </p>
         </div>
 
-        <div className="flex gap-2 flex-wrap">
-          <div className="flex items-center gap-2">
-            <select
-              className="input w-28 text-sm"
-              value={year}
-              onChange={(e) => setYear(Number(e.target.value))}
-            >
-              {[2024, 2025, 2026, 2027].map((y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              ))}
-            </select>
+        <div className="flex gap-2 flex-wrap items-center">
+          <select
+            className="rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm text-white outline-none"
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value))}
+          >
+            {[2024, 2025, 2026, 2027, 2028].map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
 
-            <button
-              onClick={openReport}
-              className="btn-ghost flex items-center gap-2 text-sm"
-            >
-              <FileText size={14} />
-              Reporte auditoría
-              <ExternalLink size={12} className="text-zinc-600" />
-            </button>
-          </div>
+          <button
+            onClick={openReport}
+            className="inline-flex items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm font-semibold text-zinc-200 hover:bg-zinc-800"
+          >
+            <FileText size={16} />
+            Reporte auditoría
+            <ExternalLink size={13} />
+          </button>
 
           {isAdmin && (
             <button
               onClick={() => setShowForm((v) => !v)}
-              className="btn-primary flex items-center gap-2"
+              className="inline-flex items-center gap-2 rounded-xl bg-yellow-400 px-4 py-2 text-sm font-bold text-black hover:bg-yellow-300"
             >
-              <Plus size={14} />
+              <Plus size={16} />
               Registrar retiro
             </button>
           )}
@@ -233,177 +227,191 @@ export default function REPPage() {
       </div>
 
       {error && (
-        <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-400">
+        <div className="rounded-2xl border border-red-500/25 bg-red-500/10 p-4 text-sm text-red-300">
           {error}
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="card text-center">
-          <p className="text-2xl font-bold text-white">{records.length}</p>
-          <p className="text-xs text-zinc-500 mt-1">Total retirados</p>
-        </div>
-
-        <div className="card text-center">
-          <p className="text-2xl font-bold text-white">{totalWeight.toFixed(0)} kg</p>
-          <p className="text-xs text-zinc-500 mt-1">Peso total</p>
-        </div>
-
-        <div className="card text-center">
-          <p className="text-2xl font-bold text-amber-400">{totalRegistered}</p>
-          <p className="text-xs text-zinc-500 mt-1">Pendientes envío</p>
-        </div>
-
-        <div className="card text-center">
-          <p className="text-2xl font-bold text-emerald-400">{totalCertified}</p>
-          <p className="text-xs text-zinc-500 mt-1">Certificados</p>
-        </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Kpi title="Registros" value={filteredRecords.length} />
+        <Kpi title="Neumáticos" value={totalQuantity} />
+        <Kpi title="Peso total" value={`${totalWeight.toFixed(1)} kg`} />
+        <Kpi title="Año" value={year} />
       </div>
 
       {showForm && isAdmin && (
-        <div className="card border-brand-600/30">
-          <h3 className="text-sm font-semibold text-white mb-4">
-            Registrar retiro de neumático
-          </h3>
-
-          <form onSubmit={submit} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="rounded-2xl border border-yellow-500/20 bg-zinc-900 p-5">
+          <div className="mb-5 flex items-center justify-between">
             <div>
-              <label className="text-xs text-zinc-400 mb-1 block">Equipo *</label>
+              <h2 className="text-lg font-bold">Registrar retiro REP</h2>
+              <p className="text-sm text-zinc-500">
+                Selecciona un equipo, el neumático retirado y los datos de
+                disposición final.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowForm(false);
+                setForm(initialForm());
+                setTires([]);
+              }}
+              className="rounded-xl border border-zinc-700 p-2 text-zinc-400 hover:text-white"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <form onSubmit={submit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Field label="Equipo">
               <select
                 required
-                className="input"
+                className="input-dark"
                 value={form.equipmentId}
                 onChange={(e) => {
-                  const equipmentId = e.target.value
-                  setForm((p) => ({ ...p, equipmentId, tireId: '' }))
-                  loadTires(equipmentId)
+                  const equipmentId = e.target.value;
+                  setForm((p) => ({ ...p, equipmentId, tireId: "" }));
+                  loadTires(equipmentId);
                 }}
               >
                 <option value="">Seleccionar equipo...</option>
                 {equipments.map((eq) => (
                   <option key={eq.id} value={eq.id}>
-                    {eq.name} ({eq.code})
+                    {eq.code || eq.name} — {eq.name}
                   </option>
                 ))}
               </select>
-            </div>
+            </Field>
 
-            <div>
-              <label className="text-xs text-zinc-400 mb-1 block">Neumático *</label>
+            <Field label="Neumático">
               <select
                 required
-                className="input"
+                className="input-dark"
                 value={form.tireId}
-                onChange={(e) => setForm((p) => ({ ...p, tireId: e.target.value }))}
                 disabled={!form.equipmentId || loadingTires}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, tireId: e.target.value }))
+                }
               >
                 <option value="">
-                  {loadingTires ? 'Cargando neumáticos...' : 'Seleccionar neumático...'}
+                  {loadingTires
+                    ? "Cargando neumáticos..."
+                    : "Seleccionar neumático..."}
                 </option>
                 {tires.map((t) => (
                   <option key={t.id} value={t.id}>
-                    {t.position} — {t.brand} {t.size}
+                    {t.position || "Sin posición"} — {t.brand || "Sin marca"}{" "}
+                    {t.size || ""}
                   </option>
                 ))}
               </select>
-            </div>
+            </Field>
 
-            <div>
-              <label className="text-xs text-zinc-400 mb-1 block">Motivo de retiro</label>
-              <select
-                className="input"
-                value={form.reason}
-                onChange={(e) => setForm((p) => ({ ...p, reason: e.target.value }))}
-              >
-                {Object.entries(REASON_MAP).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="text-xs text-zinc-400 mb-1 block">Condición</label>
-              <select
-                className="input"
-                value={form.condition}
-                onChange={(e) => setForm((p) => ({ ...p, condition: e.target.value }))}
-              >
-                {Object.entries(CONDITION_MAP).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="text-xs text-zinc-400 mb-1 block">Peso (kg)</label>
+            <Field label="Año">
               <input
+                className="input-dark"
+                type="number"
+                value={form.year}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, year: e.target.value }))
+                }
+              />
+            </Field>
+
+            <Field label="Mes">
+              <select
+                className="input-dark"
+                value={form.month}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, month: e.target.value }))
+                }
+              >
+                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Cantidad">
+              <input
+                className="input-dark"
+                type="number"
+                min="1"
+                value={form.quantity}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, quantity: e.target.value }))
+                }
+              />
+            </Field>
+
+            <Field label="Peso total (kg)">
+              <input
+                className="input-dark"
                 type="number"
                 step="0.1"
-                className="input"
-                placeholder="ej: 25.5"
-                value={form.weightKg}
-                onChange={(e) => setForm((p) => ({ ...p, weightKg: e.target.value }))}
-              />
-            </div>
-
-            <div>
-              <label className="text-xs text-zinc-400 mb-1 block">N° Guía / Factura</label>
-              <input
-                className="input"
-                placeholder="ej: GD-00123"
-                value={form.invoiceNumber}
+                placeholder="Ej: 25.5"
+                value={form.weight}
                 onChange={(e) =>
-                  setForm((p) => ({ ...p, invoiceNumber: e.target.value }))
+                  setForm((p) => ({ ...p, weight: e.target.value }))
                 }
               />
-            </div>
+            </Field>
 
-            <div>
-              <label className="text-xs text-zinc-400 mb-1 block">Punto de disposición</label>
+            <Field label="Método / punto de disposición">
               <input
-                className="input"
-                placeholder="ej: Centro de reciclaje Remac"
-                value={form.disposalPoint}
+                className="input-dark"
+                placeholder="Ej: Reciclaje / disposición autorizada"
+                value={form.disposalMethod}
                 onChange={(e) =>
-                  setForm((p) => ({ ...p, disposalPoint: e.target.value }))
+                  setForm((p) => ({ ...p, disposalMethod: e.target.value }))
                 }
               />
-            </div>
+            </Field>
 
-            <div>
-              <label className="text-xs text-zinc-400 mb-1 block">Empresa gestora</label>
+            <Field label="Empresa gestora">
               <input
-                className="input"
-                placeholder="ej: Gestitec, Remac"
-                value={form.disposalEntity}
+                className="input-dark"
+                placeholder="Ej: Gestor autorizado"
+                value={form.disposalCompany}
                 onChange={(e) =>
-                  setForm((p) => ({ ...p, disposalEntity: e.target.value }))
+                  setForm((p) => ({ ...p, disposalCompany: e.target.value }))
                 }
               />
-            </div>
+            </Field>
 
-            <div className="sm:col-span-2">
-              <label className="text-xs text-zinc-400 mb-1 block">Notas</label>
+            <Field label="Certificado / guía / factura">
+              <input
+                className="input-dark"
+                placeholder="Ej: CERT-001"
+                value={form.certificate}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, certificate: e.target.value }))
+                }
+              />
+            </Field>
+
+            <Field label="Notas">
               <textarea
-                className="input h-20 resize-none"
+                className="input-dark min-h-[90px] resize-none"
                 value={form.notes}
-                onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, notes: e.target.value }))
+                }
               />
-            </div>
+            </Field>
 
-            <div className="sm:col-span-2 flex gap-2 justify-end">
+            <div className="md:col-span-2 flex justify-end gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => {
-                  setShowForm(false)
-                  setForm(initialForm())
-                  setTires([])
+                  setShowForm(false);
+                  setForm(initialForm());
+                  setTires([]);
                 }}
-                className="btn-ghost"
+                className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-300 hover:bg-zinc-800"
               >
                 Cancelar
               </button>
@@ -411,10 +419,10 @@ export default function REPPage() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="btn-primary flex items-center gap-2"
+                className="inline-flex items-center gap-2 rounded-xl bg-yellow-400 px-4 py-2 text-sm font-bold text-black hover:bg-yellow-300 disabled:opacity-60"
               >
-                <Check size={14} />
-                {submitting ? 'Guardando...' : 'Registrar retiro'}
+                <Check size={16} />
+                {submitting ? "Guardando..." : "Registrar retiro"}
               </button>
             </div>
           </form>
@@ -422,62 +430,131 @@ export default function REPPage() {
       )}
 
       {loading ? (
-        <div className="flex items-center justify-center h-40">
-          <div className="w-7 h-7 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+        <div className="flex h-40 items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-yellow-400 border-t-transparent" />
         </div>
-      ) : records.length === 0 ? (
-        <div className="card text-center py-12">
-          <p className="text-3xl mb-3">♻️</p>
-          <p className="text-sm text-zinc-500">Sin registros de retiro aún</p>
-          <p className="text-xs text-zinc-600 mt-1">
-            Los neumáticos retirados aparecerán aquí
+      ) : filteredRecords.length === 0 ? (
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-12 text-center">
+          <Recycle size={42} className="mx-auto text-green-500 mb-4" />
+          <p className="font-semibold text-zinc-300">
+            Sin registros de retiro aún
+          </p>
+          <p className="mt-1 text-sm text-zinc-600">
+            Los neumáticos retirados aparecerán aquí.
           </p>
         </div>
       ) : (
-        <div className="card">
-          <h2 className="text-sm font-semibold text-white mb-4">
-            Neumáticos retirados ({records.length})
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+          <h2 className="mb-4 text-lg font-bold">
+            Neumáticos retirados ({filteredRecords.length})
           </h2>
 
-          <div className="space-y-2">
-            {records.map((r) => (
-              <div
-                key={r.id}
-                className="flex items-center gap-4 p-3 bg-zinc-800/40 rounded-lg border border-zinc-800"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-medium text-zinc-200">
-                      {r.equipment?.name || 'Sin equipo'}
+          <div className="space-y-3">
+            {filteredRecords.map((r) => {
+              const tire = r.tires || r.stock_tires || {};
+              const equipment = r.tires?.equipments || {};
+
+              return (
+                <div
+                  key={r.id}
+                  className="rounded-xl border border-zinc-800 bg-black/30 p-4"
+                >
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-white">
+                        {tire.brand || "Sin marca"} {tire.model || ""}{" "}
+                        {tire.size || ""}
+                      </p>
+                      <p className="text-xs text-zinc-500">
+                        Equipo: {equipment.code || equipment.name || "-"} ·
+                        Posición: {tire.position || "-"}
+                      </p>
+                    </div>
+
+                    <div className="rounded-full bg-green-500/15 px-3 py-1 text-xs font-bold text-green-400">
+                      Registrado REP
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-2 md:grid-cols-5 gap-2 text-xs text-zinc-400">
+                    <p>
+                      <b>Año/Mes:</b> {r.year}/{r.month || "-"}
                     </p>
-                    <span className="text-xs text-zinc-600">·</span>
-                    <p className="text-xs text-zinc-400">
-                      {r.tire?.position || 'Sin posición'} — {r.tire?.brand || 'Sin marca'}{' '}
-                      {r.tire?.size || ''}
+                    <p>
+                      <b>Cantidad:</b> {r.quantity || 1}
+                    </p>
+                    <p>
+                      <b>Peso:</b>{" "}
+                      {r.weight != null ? `${r.weight} kg` : "-"}
+                    </p>
+                    <p>
+                      <b>Gestor:</b> {r.disposalCompany || "-"}
+                    </p>
+                    <p>
+                      <b>Fecha:</b> {formatDate(r.createdAt)}
                     </p>
                   </div>
 
-                  <div className="flex gap-3 mt-1 text-xs text-zinc-500 flex-wrap">
-                    <span>{REASON_MAP[r.reason] || r.reason}</span>
-                    {r.weightKg ? <span>· {r.weightKg} kg</span> : null}
-                    {r.disposalEntity ? <span>· {r.disposalEntity}</span> : null}
-                    <span>
-                      ·{' '}
-                      {r.retiredAt
-                        ? new Date(r.retiredAt).toLocaleDateString('es-CL')
-                        : 'Sin fecha'}
-                    </span>
-                  </div>
+                  {(r.disposalMethod || r.certificate || r.notes) && (
+                    <div className="mt-3 rounded-xl bg-zinc-950 p-3 text-xs text-zinc-500">
+                      {r.disposalMethod && (
+                        <p>
+                          <b>Método:</b> {r.disposalMethod}
+                        </p>
+                      )}
+                      {r.certificate && (
+                        <p>
+                          <b>Certificado:</b> {r.certificate}
+                        </p>
+                      )}
+                      {r.notes && (
+                        <p>
+                          <b>Notas:</b> {r.notes}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
-
-                <span className={STATUS_CLS[r.status] || 'badge-warning'}>
-                  {STATUS_MAP[r.status] || r.status}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
+
+      <style>{`
+        .input-dark {
+          width: 100%;
+          border-radius: 0.9rem;
+          border: 1px solid rgb(63 63 70);
+          background: rgb(9 9 11);
+          padding: 0.75rem 0.9rem;
+          color: white;
+          outline: none;
+        }
+        .input-dark:focus {
+          border-color: rgb(250 204 21);
+        }
+      `}</style>
     </div>
-  )
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs font-semibold text-zinc-400">
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+function Kpi({ title, value }) {
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5 text-center">
+      <p className="text-2xl font-black text-white">{value}</p>
+      <p className="mt-1 text-xs text-zinc-500">{title}</p>
+    </div>
+  );
 }
