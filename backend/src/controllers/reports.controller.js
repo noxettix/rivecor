@@ -1,9 +1,9 @@
 const ExcelJS = require('exceljs');
 
+/* ================== GENERAR EXCEL ================== */
 async function generateExcel(payload, sheetFilter = null) {
   const workbook = new ExcelJS.Workbook();
 
-  // --- SHEET: NEUMÁTICOS ---
   if (!sheetFilter || sheetFilter === 'tires') {
     const sheet = workbook.addWorksheet('Neumáticos');
 
@@ -15,7 +15,7 @@ async function generateExcel(payload, sheetFilter = null) {
       { header: 'KM', key: 'km', width: 15 },
     ];
 
-    payload.equipments.forEach(eq => {
+    payload.equipments?.forEach(eq => {
       (eq.tires || []).forEach(t => {
         sheet.addRow({
           equipment: eq.name,
@@ -28,7 +28,6 @@ async function generateExcel(payload, sheetFilter = null) {
     });
   }
 
-  // --- SHEET: HISTORIAL ---
   if (!sheetFilter || sheetFilter === 'history') {
     const sheet = workbook.addWorksheet('Historial');
 
@@ -39,7 +38,7 @@ async function generateExcel(payload, sheetFilter = null) {
       { header: 'Fecha', key: 'date', width: 20 },
     ];
 
-    payload.maintenances.forEach(m => {
+    payload.maintenances?.forEach(m => {
       sheet.addRow({
         equipment: m.equipmentName,
         mechanic: m.mechanicName,
@@ -49,7 +48,6 @@ async function generateExcel(payload, sheetFilter = null) {
     });
   }
 
-  // --- SHEET: COSTOS ---
   if (!sheetFilter || sheetFilter === 'costs') {
     const sheet = workbook.addWorksheet('Costos');
 
@@ -59,16 +57,15 @@ async function generateExcel(payload, sheetFilter = null) {
       { header: 'Costo/KM', key: 'cost', width: 15 },
     ];
 
-    payload.costs.forEach(c => {
+    payload.costs?.forEach(c => {
       sheet.addRow({
         equipment: c.equipmentName,
-        brand: c.tire.brand,
-        cost: c.analysis.totalCostPerKm,
+        brand: c.tire?.brand,
+        cost: c.analysis?.totalCostPerKm,
       });
     });
   }
 
-  // --- SHEET: MECÁNICOS ---
   if (!sheetFilter || sheetFilter === 'mechanics') {
     const sheet = workbook.addWorksheet('Mecánicos');
 
@@ -78,14 +75,81 @@ async function generateExcel(payload, sheetFilter = null) {
       { header: 'Última actividad', key: 'last', width: 25 },
     ];
 
-    payload.mechanics.forEach(m => {
+    payload.mechanics?.forEach(m => {
       sheet.addRow({
         name: m.name,
-        jobs: m.stats.totalMaintenances,
-        last: m.stats.lastActivity,
+        jobs: m.stats?.totalMaintenances,
+        last: m.stats?.lastActivity,
       });
     });
   }
 
   return await workbook.xlsx.writeBuffer();
 }
+
+/* ================== MOCK DATA (para que funcione YA) ================== */
+async function collectReportData() {
+  return {
+    equipments: [],
+    maintenances: [],
+    costs: [],
+    mechanics: [],
+  };
+}
+
+/* ================== CONTROLLERS ================== */
+
+const downloadFull = async (req, res) => {
+  try {
+    const payload = await collectReportData();
+    const buf = await generateExcel(payload);
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="Rivecor_Reporte_Completo.xlsx"'
+    );
+
+    res.send(buf);
+  } catch (err) {
+    console.error('Report error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+const downloadTires = async (req, res) => {
+  const payload = await collectReportData();
+  const buf = await generateExcel(payload, 'tires');
+  res.send(buf);
+};
+
+const downloadHistory = async (req, res) => {
+  const payload = await collectReportData();
+  const buf = await generateExcel(payload, 'history');
+  res.send(buf);
+};
+
+const downloadCosts = async (req, res) => {
+  const payload = await collectReportData();
+  const buf = await generateExcel(payload, 'costs');
+  res.send(buf);
+};
+
+const downloadMechanics = async (req, res) => {
+  const payload = await collectReportData();
+  const buf = await generateExcel(payload, 'mechanics');
+  res.send(buf);
+};
+
+/* ================== EXPORT ================== */
+
+module.exports = {
+  downloadFull,
+  downloadTires,
+  downloadHistory,
+  downloadCosts,
+  downloadMechanics,
+};
