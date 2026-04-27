@@ -1,7 +1,13 @@
 import axios from "axios";
 
+const API_URL = import.meta.env.VITE_API_URL?.trim();
+
+if (!API_URL) {
+  throw new Error("Falta configurar VITE_API_URL");
+}
+
 const api = axios.create({
-  baseURL: (import.meta.env.VITE_API_URL || "http://localhost:3001/api").trim(),
+  baseURL: API_URL,
   timeout: 15000,
 });
 
