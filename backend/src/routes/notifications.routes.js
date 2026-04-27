@@ -6,8 +6,7 @@ const { sendWeeklySummary } = require("../services/weeklyReportService");
 
 const prisma = new PrismaClient();
 
-router.use(authenticate, authorize("ADMIN"));
-
+router.use(authenticate);
 function getTargetWhere(target) {
   const base = {
     isActive: true,
