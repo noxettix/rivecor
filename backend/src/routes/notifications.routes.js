@@ -6,7 +6,8 @@ const { sendWeeklySummary } = require("../services/weeklyReportService");
 
 const prisma = new PrismaClient();
 
-router.use(authenticate);
+router.use(authenticate, authorize("ADMIN"));
+
 function getTargetWhere(target) {
   const base = {
     isActive: true,
@@ -16,27 +17,9 @@ function getTargetWhere(target) {
   };
 
   if (!target || target === "ALL") return base;
-
-  if (target === "CLIENT") {
-    return {
-      ...base,
-      role: "CLIENT",
-    };
-  }
-
-  if (target === "OPERATOR") {
-    return {
-      ...base,
-      role: "OPERATOR",
-    };
-  }
-
-  if (target === "ADMIN") {
-    return {
-      ...base,
-      role: "ADMIN",
-    };
-  }
+  if (target === "CLIENT") return { ...base, role: "CLIENT" };
+  if (target === "OPERATOR") return { ...base, role: "OPERATOR" };
+  if (target === "ADMIN") return { ...base, role: "ADMIN" };
 
   return base;
 }
@@ -54,7 +37,6 @@ function targetLabel(target) {
   }
 }
 
-// GET /api/notifications/summary
 router.get("/summary", async (req, res) => {
   try {
     const [all, clients, operators, admins] = await Promise.all([
@@ -65,24 +47,24 @@ router.get("/summary", async (req, res) => {
     ]);
 
     res.json({
-      users: {
-        all,
-        clients,
-        operators,
-        admins,
-      },
+      users: { all, clients, operators, admins },
       emailConfigured: Boolean(process.env.SMTP_USER && process.env.SMTP_PASS),
     });
   } catch (err) {
-    console.error("notifications summary error:", err);
+    console.error("❌ notifications summary error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST /api/notifications/test
 router.post("/test", async (req, res) => {
+  console.log("🔥 TEST EMAIL TRIGGERED");
+
   try {
-    const to = req.body.email || process.env.ADMIN_EMAIL || process.env.SMTP_USER;
+    const to = req.body?.email || process.env.ADMIN_EMAIL || process.env.SMTP_USER;
+
+    console.log("📧 Enviando a:", to);
+    console.log("SMTP_USER:", process.env.SMTP_USER ? "CONFIGURADO" : "NO CONFIGURADO");
+    console.log("SMTP_PASS:", process.env.SMTP_PASS ? "CONFIGURADO" : "NO CONFIGURADO");
 
     if (!to) {
       return res.status(400).json({
@@ -107,13 +89,14 @@ router.post("/test", async (req, res) => {
       message: `Email de prueba enviado a ${to}`,
     });
   } catch (err) {
-    console.error("notifications test error:", err);
+    console.error("❌ notifications test error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST /api/notifications/broadcast
 router.post("/broadcast", async (req, res) => {
+  console.log("📢 BROADCAST EMAIL TRIGGERED");
+
   try {
     const { target = "ALL", subject, message } = req.body;
 
@@ -146,13 +129,13 @@ router.post("/broadcast", async (req, res) => {
       });
     }
 
+    const safeMessage = String(message)
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+
     const html = buildBaseEmail({
       title: subject,
-      content: `
-        <div style="white-space:pre-line;">${String(message)
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;")}</div>
-      `,
+      content: `<div style="white-space:pre-line;">${safeMessage}</div>`,
     });
 
     const results = await Promise.allSettled(
@@ -168,6 +151,8 @@ router.post("/broadcast", async (req, res) => {
     const sent = results.filter((r) => r.status === "fulfilled").length;
     const failed = results.filter((r) => r.status === "rejected").length;
 
+    console.log(`📢 Broadcast terminado: ${sent}/${validUsers.length}. Fallidos: ${failed}`);
+
     res.json({
       ok: true,
       target,
@@ -177,18 +162,17 @@ router.post("/broadcast", async (req, res) => {
       failed,
     });
   } catch (err) {
-    console.error("notifications broadcast error:", err);
+    console.error("❌ notifications broadcast error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST /api/notifications/weekly
 router.post("/weekly", async (req, res) => {
   try {
     const result = await sendWeeklySummary();
     res.json(result);
   } catch (err) {
-    console.error("notifications weekly error:", err);
+    console.error("❌ notifications weekly error:", err);
     res.status(500).json({ error: err.message });
   }
 });
