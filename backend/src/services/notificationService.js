@@ -5,11 +5,18 @@ function getMailer() {
     host: process.env.SMTP_HOST || "smtp.gmail.com",
     port: parseInt(process.env.SMTP_PORT || "587", 10),
     secure: false,
+
+    // 🔥 FIX CRÍTICO → FORZAR IPV4
+    family: 4,
+
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
-    tls: { rejectUnauthorized: false },
+
+    tls: {
+      rejectUnauthorized: false,
+    },
   });
 }
 
@@ -27,7 +34,10 @@ async function sendEmail({ to, subject, html }) {
   try {
     const mailer = getMailer();
 
+    console.log("📡 Verificando conexión SMTP...");
     await mailer.verify();
+
+    console.log("📧 Enviando correo a:", to);
 
     await mailer.sendMail({
       from: `"Rivecor Eco Móvil 360" <${process.env.SMTP_USER}>`,
@@ -36,15 +46,20 @@ async function sendEmail({ to, subject, html }) {
       html,
     });
 
-    console.log("📧 Email enviado a:", to);
+    console.log("✅ Email enviado correctamente a:", to);
     return true;
   } catch (err) {
-    console.error("Email error:", err.message);
+    console.error("❌ Email error:", err.message);
     throw err;
   }
 }
 
-function buildBaseEmail({ title, content, buttonText = "Ir al sistema", buttonUrl = "https://web.rivecor.com" }) {
+function buildBaseEmail({
+  title,
+  content,
+  buttonText = "Ir al sistema",
+  buttonUrl = "https://web.rivecor.com",
+}) {
   return `
     <div style="font-family:Arial,sans-serif;background:#f4f4f5;padding:24px;">
       <div style="max-width:680px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e5e7eb;">
@@ -97,53 +112,25 @@ async function notifyCriticalTire({ tire, equipment, company }) {
 
   const subject = `⚠ Neumático crítico — ${equipment?.name || "Equipo"}`;
 
-  const html = `
-  <div style="font-family:Arial,sans-serif;background:#f5f5f5;padding:20px;">
-    
-    <div style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:10px;overflow:hidden;">
-      
-      <!-- HEADER -->
-      <div style="background:#0A0A0A;padding:20px;text-align:center;">
-        <img 
-          src="https://web.rivecor.com/logo.png" 
-          alt="Rivecor"
-          style="width:140px;"
-        />
-      </div>
-
-      <!-- CONTENIDO -->
-      <div style="padding:24px;">
-        <h2 style="color:#111;margin-bottom:10px;">
-          🚀 Rivecor Eco Móvil 360
-        </h2>
-
-        <p style="color:#555;font-size:14px;">
-          Tu sistema de gestión de neumáticos está funcionando correctamente.
-        </p>
-
-        <div style="margin-top:20px;">
-          <a 
-            href="https://web.rivecor.com"
-            style="background:#22c55e;color:white;padding:10px 18px;border-radius:6px;text-decoration:none;font-size:14px;"
-          >
-            Ir al sistema
-          </a>
-        </div>
-      </div>
-
-      <!-- FOOTER -->
-      <div style="background:#fafafa;padding:15px;text-align:center;font-size:12px;color:#999;">
-        © ${new Date().getFullYear()} Rivecor
-      </div>
-
-    </div>
-  </div>
-`
+  const html = buildBaseEmail({
+    title: "⚠ Neumático crítico detectado",
+    content: `
+      <p><strong>Empresa:</strong> ${company?.name || "—"}</p>
+      <p><strong>Equipo:</strong> ${equipment?.name || "—"}</p>
+      <p><strong>Posición:</strong> ${tire?.position || "—"}</p>
+      <p><strong>Estado:</strong> CRÍTICO</p>
+    `,
+  });
 
   return sendEmail({ to: adminEmail, subject, html });
 }
 
-async function notifyUpcomingMaintenance({ equipment, company, scheduledAt, daysUntil }) {
+async function notifyUpcomingMaintenance({
+  equipment,
+  company,
+  scheduledAt,
+  daysUntil,
+}) {
   const adminEmail = process.env.ADMIN_EMAIL || process.env.SMTP_USER;
   if (!adminEmail) return false;
 
@@ -156,7 +143,9 @@ async function notifyUpcomingMaintenance({ equipment, company, scheduledAt, days
       <p><strong>Empresa:</strong> ${company?.name || "—"}</p>
       <p><strong>Equipo:</strong> ${equipment?.name || "—"}</p>
       <p><strong>Fecha:</strong> ${
-        scheduledAt ? new Date(scheduledAt).toLocaleDateString("es-CL") : "—"
+        scheduledAt
+          ? new Date(scheduledAt).toLocaleDateString("es-CL")
+          : "—"
       }</p>
     `,
   });
