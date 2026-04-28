@@ -4,7 +4,7 @@ function getMailer() {
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST || "smtp.gmail.com",
     port: parseInt(process.env.SMTP_PORT || "587", 10),
-    secure: false,
+    secure: Number(process.env.SMTP_PORT || 587) === 465,
 
     // 🔥 FIX CRÍTICO → FORZAR IPV4
     family: 4,
