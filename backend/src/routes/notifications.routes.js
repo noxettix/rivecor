@@ -1,12 +1,14 @@
 const router = require("express").Router();
 const { PrismaClient } = require("@prisma/client");
 const { authenticate, authorize } = require("../middleware/auth.middleware");
-const { sendEmail, buildBaseEmail } = require("../services/notificationService");
-const { sendWeeklySummary } = require("../services/weeklyReportService");
 
 const prisma = new PrismaClient();
 
 router.use(authenticate, authorize("ADMIN"));
+
+function getUsersModel() {
+  return prisma.users || prisma.user || null;
+}
 
 function getTargetWhere(target) {
   const base = {
@@ -17,9 +19,27 @@ function getTargetWhere(target) {
   };
 
   if (!target || target === "ALL") return base;
-  if (target === "CLIENT") return { ...base, role: "CLIENT" };
-  if (target === "OPERATOR") return { ...base, role: "OPERATOR" };
-  if (target === "ADMIN") return { ...base, role: "ADMIN" };
+
+  if (target === "CLIENT") {
+    return {
+      ...base,
+      role: "CLIENT",
+    };
+  }
+
+  if (target === "OPERATOR") {
+    return {
+      ...base,
+      role: "OPERATOR",
+    };
+  }
+
+  if (target === "ADMIN") {
+    return {
+      ...base,
+      role: "ADMIN",
+    };
+  }
 
   return base;
 }
@@ -37,144 +57,51 @@ function targetLabel(target) {
   }
 }
 
-router.get("/summary", async (req, res) => {
+// 🔥 ENDPOINT NUEVO (CLAVE)
+router.get("/emails", async (req, res) => {
   try {
-    const [all, clients, operators, admins] = await Promise.all([
-      prisma.users.count({ where: { isActive: true } }),
-      prisma.users.count({ where: { isActive: true, role: "CLIENT" } }),
-      prisma.users.count({ where: { isActive: true, role: "OPERATOR" } }),
-      prisma.users.count({ where: { isActive: true, role: "ADMIN" } }),
-    ]);
+    const Users = getUsersModel();
 
-    res.json({
-      users: { all, clients, operators, admins },
-      emailConfigured: Boolean(process.env.SMTP_USER && process.env.SMTP_PASS),
-    });
-  } catch (err) {
-    console.error("❌ notifications summary error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.post("/test", async (req, res) => {
-  console.log("🔥 TEST EMAIL TRIGGERED");
-
-  try {
-    const to = req.body?.email || process.env.ADMIN_EMAIL || process.env.SMTP_USER;
-
-    console.log("📧 Enviando a:", to);
-    console.log("SMTP_USER:", process.env.SMTP_USER ? "CONFIGURADO" : "NO CONFIGURADO");
-    console.log("SMTP_PASS:", process.env.SMTP_PASS ? "CONFIGURADO" : "NO CONFIGURADO");
-
-    if (!to) {
-      return res.status(400).json({
-        error: "No hay email configurado para prueba",
+    if (!Users) {
+      return res.status(500).json({
+        error: "Modelo users/user no disponible",
       });
     }
 
-    await sendEmail({
-      to,
-      subject: "✅ Test Rivecor — Email funcionando",
-      html: buildBaseEmail({
-        title: "✅ Email configurado correctamente",
-        content: `
-          <p>Este es un mensaje de prueba de <strong>Rivecor Eco Móvil 360</strong>.</p>
-          <p>Si recibiste este correo, el servicio de email está funcionando correctamente.</p>
-        `,
-      }),
-    });
+    const { target = "ALL" } = req.query;
 
-    res.json({
-      ok: true,
-      message: `Email de prueba enviado a ${to}`,
-    });
-  } catch (err) {
-    console.error("❌ notifications test error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.post("/broadcast", async (req, res) => {
-  console.log("📢 BROADCAST EMAIL TRIGGERED");
-
-  try {
-    const { target = "ALL", subject, message } = req.body;
-
-    if (!subject || !String(subject).trim()) {
-      return res.status(400).json({ error: "El asunto es obligatorio" });
-    }
-
-    if (!message || !String(message).trim()) {
-      return res.status(400).json({ error: "El mensaje es obligatorio" });
-    }
-
-    const users = await prisma.users.findMany({
+    const users = await Users.findMany({
       where: getTargetWhere(target),
       select: {
-        id: true,
-        name: true,
         email: true,
-        role: true,
-      },
-      orderBy: {
-        createdAt: "desc",
       },
     });
 
-    const validUsers = users.filter((u) => u.email && u.email.includes("@"));
+    const emails = users
+      .map((u) => u.email)
+      .filter((e) => e && e.includes("@"));
 
-    if (validUsers.length === 0) {
-      return res.status(400).json({
-        error: "No hay usuarios con correo válido para este grupo",
-      });
-    }
-
-    const safeMessage = String(message)
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-
-    const html = buildBaseEmail({
-      title: subject,
-      content: `<div style="white-space:pre-line;">${safeMessage}</div>`,
-    });
-
-    const results = await Promise.allSettled(
-      validUsers.map((user) =>
-        sendEmail({
-          to: user.email,
-          subject,
-          html,
-        })
-      )
-    );
-
-    const sent = results.filter((r) => r.status === "fulfilled").length;
-    const failed = results.filter((r) => r.status === "rejected").length;
-
-    console.log(`📢 Broadcast terminado: ${sent}/${validUsers.length}. Fallidos: ${failed}`);
+    console.log("📧 Emails encontrados:", emails.length);
 
     res.json({
       ok: true,
-      target,
-      targetLabel: targetLabel(target),
-      total: validUsers.length,
-      sent,
-      failed,
+      total: emails.length,
+      emails,
     });
   } catch (err) {
-    console.error("❌ notifications broadcast error:", err);
-    res.status(500).json({ error: err.message });
+    console.error("❌ Error obteniendo emails:", err);
+    res.status(500).json({
+      error: err.message,
+    });
   }
 });
 
-router.post("/weekly", async (req, res) => {
-  try {
-    const result = await sendWeeklySummary();
-    res.json(result);
-  } catch (err) {
-    console.error("❌ notifications weekly error:", err);
-    res.status(500).json({ error: err.message });
-  }
+// 🔧 OPCIONAL: para probar rápido
+router.get("/ping", (req, res) => {
+  res.json({
+    ok: true,
+    message: "notifications funcionando",
+  });
 });
 
 module.exports = router;

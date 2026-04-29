@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const { prisma } = require('../lib/prisma');
+const { sendEmail, buildBaseEmail } = require('../services/notificationService');
 
 function getMechanicsModel() {
   return prisma.mechanics || prisma.mechanic || null;
@@ -55,6 +56,50 @@ function inferAlignmentCount(form) {
 function inferBalancingCount(form) {
   const notes = safeParseJSON(form?.notes);
   return notes?.balancingChecked ? 1 : 0;
+}
+
+async function sendMechanicCredentialsEmail({ mechanicName, email, password, type = 'created' }) {
+  try {
+    if (!email || !password) return false;
+
+    const title =
+      type === 'reset'
+        ? 'Contraseña restablecida'
+        : 'Cuenta de mecánico creada';
+
+    const subject =
+      type === 'reset'
+        ? 'Contraseña restablecida - Rivecor Eco Móvil 360'
+        : 'Acceso creado - Rivecor Eco Móvil 360';
+
+    const html = buildBaseEmail({
+      title,
+      content: `
+        <p>Hola <strong>${mechanicName || 'Mecánico'}</strong>,</p>
+        <p>${type === 'reset'
+          ? 'Tu contraseña de acceso fue restablecida.'
+          : 'Se creó tu acceso a la plataforma Rivecor Eco Móvil 360.'}</p>
+
+        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin:18px 0;">
+          <p style="margin:0 0 8px;"><strong>Usuario:</strong> ${email}</p>
+          <p style="margin:0;"><strong>Contraseña:</strong> ${password}</p>
+        </div>
+
+        <p>Te recomendamos cambiar la contraseña después de iniciar sesión.</p>
+      `,
+      buttonText: 'Ingresar al sistema',
+      buttonUrl: process.env.APP_URL || 'https://web.rivecor.com',
+    });
+
+    return await sendEmail({
+      to: email,
+      subject,
+      html,
+    });
+  } catch (error) {
+    console.error('sendMechanicCredentialsEmail error:', error.message);
+    return false;
+  }
 }
 
 async function enrichMechanic(m) {
@@ -196,7 +241,9 @@ const create = async (req, res) => {
     } = req.body;
 
     if (!name || !email || !password) {
-      return res.status(400).json({ error: 'Nombre, email y password son obligatorios' });
+      return res.status(400).json({
+        error: 'Nombre, email y password son obligatorios',
+      });
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
@@ -246,9 +293,17 @@ const create = async (req, res) => {
       return { user, mechanic };
     });
 
+    const emailSent = await sendMechanicCredentialsEmail({
+      mechanicName: name,
+      email: normalizedEmail,
+      password,
+      type: 'created',
+    });
+
     res.status(201).json({
       ...result,
       passwordPlain: password,
+      emailSent,
     });
   } catch (e) {
     console.error('mechanics create error:', e);
@@ -284,6 +339,7 @@ const update = async (req, res) => {
     } = req.body;
 
     let normalizedEmail = current.email;
+
     if (email) {
       normalizedEmail = String(email).trim().toLowerCase();
 
@@ -402,16 +458,24 @@ const resetPassword = async (req, res) => {
     }
 
     if (!mechanic.userId) {
-      return res.status(400).json({ error: 'El mecánico no tiene usuario asociado' });
+      return res.status(400).json({
+        error: 'El mecánico no tiene usuario asociado',
+      });
     }
 
     const user = await Users.findUnique({
       where: { id: mechanic.userId },
-      select: { id: true, email: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+      },
     });
 
     if (!user) {
-      return res.status(404).json({ error: 'Usuario asociado no encontrado' });
+      return res.status(404).json({
+        error: 'Usuario asociado no encontrado',
+      });
     }
 
     const hashed = await bcrypt.hash(password, 10);
@@ -421,10 +485,18 @@ const resetPassword = async (req, res) => {
       data: { password: hashed },
     });
 
+    const emailSent = await sendMechanicCredentialsEmail({
+      mechanicName: mechanic.name || user.name,
+      email: user.email,
+      password,
+      type: 'reset',
+    });
+
     res.json({
       ok: true,
       email: user.email,
       newPassword: password,
+      emailSent,
     });
   } catch (e) {
     console.error('mechanics resetPassword error:', e);
@@ -438,13 +510,17 @@ const assignCompany = async (req, res) => {
     const MechanicCompanies = getMechanicCompaniesModel();
 
     if (!MechanicCompanies) {
-      return res.status(400).json({ error: 'No existe relación mechanic_companies en la BD' });
+      return res.status(400).json({
+        error: 'No existe relación mechanic_companies en la BD',
+      });
     }
 
     const { companyId } = req.body;
 
     if (!companyId) {
-      return res.status(400).json({ error: 'companyId es obligatorio' });
+      return res.status(400).json({
+        error: 'companyId es obligatorio',
+      });
     }
 
     const rel = await MechanicCompanies.create({

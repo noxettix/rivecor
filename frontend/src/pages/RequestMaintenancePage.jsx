@@ -9,12 +9,11 @@ import {
 } from "lucide-react";
 import api from "../services/api";
 
-// ⚠️ AJUSTA estos valores según el enum real del backend
 const PRIORITY_MAP = {
   LOW: "LOW",
-  MEDIUM: "NORMAL", // <- cambia este si tu backend usa otro valor
+  MEDIUM: "NORMAL",
   HIGH: "HIGH",
-  CRITICAL: "CRITICAL",
+  CRITICAL: "URGENT",
 };
 
 export default function RequestMaintenancePage() {
@@ -27,11 +26,12 @@ export default function RequestMaintenancePage() {
     description: "",
     priority: "MEDIUM",
     problemType: "GENERAL",
-    lat: "-33.45",
-    lng: "-70.66",
+    lat: "",
+    lng: "",
   });
 
   const [saving, setSaving] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -41,6 +41,37 @@ export default function RequestMaintenancePage() {
       ...prev,
       [name]: value,
     }));
+  }
+
+  function getCurrentLocation() {
+    setError("");
+    setLocating(true);
+
+    if (!navigator.geolocation) {
+      setLocating(false);
+      setError("Tu navegador no soporta geolocalización.");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setForm((prev) => ({
+          ...prev,
+          lat: String(pos.coords.latitude),
+          lng: String(pos.coords.longitude),
+        }));
+        setLocating(false);
+      },
+      () => {
+        setLocating(false);
+        setError("No se pudo obtener la ubicación. Revisa permisos del navegador.");
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      }
+    );
   }
 
   async function handleSubmit(e) {
@@ -75,8 +106,8 @@ export default function RequestMaintenancePage() {
       return;
     }
 
-    if (Number.isNaN(latitude) || Number.isNaN(longitude)) {
-      setError("La latitud y longitud deben ser números válidos.");
+    if (!form.lat || !form.lng || Number.isNaN(latitude) || Number.isNaN(longitude)) {
+      setError("Debes usar la ubicación actual o ingresar latitud y longitud válidas.");
       return;
     }
 
@@ -109,8 +140,8 @@ export default function RequestMaintenancePage() {
         description: "",
         priority: "MEDIUM",
         problemType: "GENERAL",
-        lat: "-33.45",
-        lng: "-70.66",
+        lat: "",
+        lng: "",
       });
 
       setTimeout(() => {
@@ -183,11 +214,7 @@ export default function RequestMaintenancePage() {
             ) : null}
 
             <div className="grid gap-4 md:grid-cols-3">
-              <Field
-                label="Cliente"
-                icon={<ClipboardList size={15} />}
-                required
-              >
+              <Field label="Cliente" icon={<ClipboardList size={15} />} required>
                 <input
                   name="clientName"
                   value={form.clientName}
@@ -197,11 +224,7 @@ export default function RequestMaintenancePage() {
                 />
               </Field>
 
-              <Field
-                label="Patente"
-                icon={<ClipboardList size={15} />}
-                required
-              >
+              <Field label="Patente" icon={<ClipboardList size={15} />} required>
                 <input
                   name="plate"
                   value={form.plate}
@@ -211,11 +234,7 @@ export default function RequestMaintenancePage() {
                 />
               </Field>
 
-              <Field
-                label="Tipo de unidad"
-                icon={<Wrench size={15} />}
-                required
-              >
+              <Field label="Tipo de unidad" icon={<Wrench size={15} />} required>
                 <select
                   name="unitType"
                   value={form.unitType}
@@ -262,11 +281,7 @@ export default function RequestMaintenancePage() {
               </Field>
             </div>
 
-            <Field
-              label="Descripción del problema"
-              icon={<ClipboardList size={15} />}
-              required
-            >
+            <Field label="Descripción del problema" icon={<ClipboardList size={15} />} required>
               <textarea
                 name="description"
                 value={form.description}
@@ -291,7 +306,8 @@ export default function RequestMaintenancePage() {
                     name="lat"
                     value={form.lat}
                     onChange={handleChange}
-                    className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-white outline-none transition focus:border-yellow-400"
+                    placeholder="-33.45"
+                    className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-yellow-400"
                   />
                 </Field>
 
@@ -300,13 +316,24 @@ export default function RequestMaintenancePage() {
                     name="lng"
                     value={form.lng}
                     onChange={handleChange}
-                    className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-white outline-none transition focus:border-yellow-400"
+                    placeholder="-70.66"
+                    className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-yellow-400"
                   />
                 </Field>
               </div>
 
+              <button
+                type="button"
+                onClick={getCurrentLocation}
+                disabled={locating}
+                className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-yellow-400 px-4 py-3 text-sm font-semibold text-black transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <MapPin size={16} />
+                {locating ? "Obteniendo ubicación..." : "Usar ubicación actual"}
+              </button>
+
               <p className="mt-3 text-xs text-zinc-500">
-                Puedes reemplazar estos valores por GPS real más adelante.
+                Usa la ubicación actual del navegador o ingresa coordenadas manualmente.
               </p>
             </div>
 

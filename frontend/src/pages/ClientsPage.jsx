@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import api from '../services/api'
 import {
   Plus, Building2, ChevronDown, ChevronUp,
@@ -9,6 +9,7 @@ const fmt = n => n != null ? `$${Math.round(n).toLocaleString('es-CL')}` : '—'
 
 export default function ClientsPage() {
   const [companies, setCompanies] = useState([])
+  const [allEquipments, setAllEquipments] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [showCreate, setShowCreate] = useState(false)
@@ -20,8 +21,13 @@ export default function ClientsPage() {
       setLoading(true)
       setError('')
 
-      const { data } = await api.get('/clients')
-      setCompanies(Array.isArray(data) ? data : [])
+      const [clientsRes, equipmentsRes] = await Promise.all([
+        api.get('/clients'),
+        api.get('/equipments').catch(() => ({ data: [] })),
+      ])
+
+      setCompanies(Array.isArray(clientsRes.data) ? clientsRes.data : [])
+      setAllEquipments(Array.isArray(equipmentsRes.data) ? equipmentsRes.data : [])
     } catch (err) {
       console.error('Error cargando clientes:', err)
 
@@ -32,6 +38,7 @@ export default function ClientsPage() {
       }
 
       setCompanies([])
+      setAllEquipments([])
     } finally {
       setLoading(false)
     }
@@ -42,16 +49,19 @@ export default function ClientsPage() {
   }, [])
 
   const totalActiveContracts = companies.filter(c => c.contracts?.length > 0).length
-  const totalEquipments = companies.reduce((sum, c) => sum + (c._count?.equipments || 0), 0)
+
+  const totalEquipments = companies.reduce((sum, c) => {
+    const fromClient = c.equipments?.length || c._count?.equipments || 0
+    return sum + fromClient
+  }, 0)
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-5">
-      {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-xl font-semibold text-white">Gestión de clientes</h1>
           <p className="text-sm text-zinc-500 mt-0.5">
-            Empresas, usuarios y mecánicos asignados
+            Empresas, usuarios, equipos y mecánicos asignados
           </p>
         </div>
 
@@ -63,7 +73,6 @@ export default function ClientsPage() {
         </button>
       </div>
 
-      {/* KPIs */}
       <div className="grid grid-cols-3 gap-4">
         <div className="card text-center">
           <p className="text-2xl font-bold text-white">{companies.length}</p>
@@ -81,7 +90,6 @@ export default function ClientsPage() {
         </div>
       </div>
 
-      {/* Credenciales recién creadas */}
       {created && (
         <div className="card border-emerald-500/30 bg-emerald-500/5">
           <div className="flex items-start justify-between gap-3">
@@ -111,14 +119,12 @@ export default function ClientsPage() {
         </div>
       )}
 
-      {/* Error */}
       {error && (
         <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-red-400 text-sm">
           {error}
         </div>
       )}
 
-      {/* Lista de empresas */}
       {loading ? (
         <div className="flex items-center justify-center h-40">
           <div className="w-7 h-7 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
@@ -143,6 +149,7 @@ export default function ClientsPage() {
             <CompanyCard
               key={c.id}
               company={c}
+              allEquipments={allEquipments}
               isExpanded={expanded === c.id}
               onToggle={() => setExpanded(expanded === c.id ? null : c.id)}
               onUpdate={load}
@@ -151,7 +158,6 @@ export default function ClientsPage() {
         </div>
       )}
 
-      {/* Modal crear cliente */}
       {showCreate && (
         <CreateClientModal
           onClose={() => setShowCreate(false)}
@@ -166,10 +172,47 @@ export default function ClientsPage() {
   )
 }
 
-function CompanyCard({ company, isExpanded, onToggle, onUpdate }) {
+function CompanyCard({ company, allEquipments, isExpanded, onToggle, onUpdate }) {
   const [mechanics, setMechanics] = useState(null)
   const [loadingM, setLoadingM] = useState(false)
+  const [equipmentSearch, setEquipmentSearch] = useState('')
   const contract = company.contracts?.[0]
+
+  const companyEquipments = useMemo(() => {
+    if (Array.isArray(company.equipments) && company.equipments.length > 0) {
+      return company.equipments
+    }
+
+    return (allEquipments || []).filter(eq => {
+      return (
+        eq.companyId === company.id ||
+        eq.company_id === company.id ||
+        eq.companies?.id === company.id ||
+        eq.company?.id === company.id
+      )
+    })
+  }, [company, allEquipments])
+
+  const filteredEquipments = useMemo(() => {
+    const q = equipmentSearch.trim().toLowerCase()
+
+    if (!q) return companyEquipments
+
+    return companyEquipments.filter(eq => {
+      const text = [
+        eq.code,
+        eq.name,
+        eq.licensePlate,
+        eq.plate,
+        eq.type,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+
+      return text.includes(q)
+    })
+  }, [companyEquipments, equipmentSearch])
 
   const loadMechanics = async () => {
     if (mechanics) return
@@ -219,6 +262,7 @@ function CompanyCard({ company, isExpanded, onToggle, onUpdate }) {
     try {
       const { data } = await api.post(`/clients/${company.id}/reset-password`)
       alert(`Nueva contraseña enviada por email: ${data.newPassword}`)
+      onUpdate?.()
     } catch (err) {
       console.error(err)
       alert(err?.response?.data?.error || 'No se pudo restablecer contraseña')
@@ -269,7 +313,6 @@ function CompanyCard({ company, isExpanded, onToggle, onUpdate }) {
 
       {isExpanded && (
         <div className="border-t border-zinc-800 p-4 space-y-5 bg-zinc-900/40">
-          {/* Info empresa */}
           <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
             {company.contactName && <InfoRow label="Contacto" value={company.contactName} />}
             {company.contactEmail && <InfoRow label="Email" value={company.contactEmail} />}
@@ -278,7 +321,53 @@ function CompanyCard({ company, isExpanded, onToggle, onUpdate }) {
             {company.address && <InfoRow label="Dirección" value={company.address} />}
           </div>
 
-          {/* Usuarios */}
+          <div>
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                Equipos del cliente
+              </p>
+
+              <span className="text-[11px] text-zinc-500">
+                {companyEquipments.length} equipo{companyEquipments.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+
+            <input
+              placeholder="Buscar por patente, código o nombre..."
+              className="input mb-3"
+              value={equipmentSearch}
+              onChange={(e) => setEquipmentSearch(e.target.value)}
+            />
+
+            {companyEquipments.length === 0 ? (
+              <p className="text-xs text-zinc-600">
+                No hay equipos registrados para este cliente o el backend no los está enviando.
+              </p>
+            ) : filteredEquipments.length === 0 ? (
+              <p className="text-xs text-zinc-600">
+                No se encontraron equipos con esa patente.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {filteredEquipments.map(eq => (
+                  <div
+                    key={eq.id}
+                    className="flex items-center justify-between gap-3 bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-xs text-white font-medium truncate">
+                        {eq.code || eq.licensePlate || eq.plate || 'SIN PATENTE'}
+                      </p>
+                      <p className="text-[11px] text-zinc-500 truncate">
+                        {eq.name || 'Equipo'} {eq.type ? `· ${eq.type}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div>
             <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
               Usuarios
@@ -319,7 +408,6 @@ function CompanyCard({ company, isExpanded, onToggle, onUpdate }) {
             </button>
           </div>
 
-          {/* Mecánicos asignados */}
           <div>
             <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
               Mecánicos asignados

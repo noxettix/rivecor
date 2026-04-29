@@ -111,6 +111,20 @@ function AlertRule({ icon, title, desc }) {
   );
 }
 
+function openGmailCompose({ to = "", bcc = "", subject = "", body = "" }) {
+  const params = new URLSearchParams();
+
+  params.set("view", "cm");
+  params.set("fs", "1");
+
+  if (to) params.set("to", to);
+  if (bcc) params.set("bcc", bcc);
+  if (subject) params.set("su", subject);
+  if (body) params.set("body", body);
+
+  window.open(`https://mail.google.com/mail/?${params.toString()}`, "_blank");
+}
+
 export default function NotificationsPage() {
   const [summary, setSummary] = useState(null);
   const [form, setForm] = useState(emptyForm);
@@ -137,7 +151,7 @@ export default function NotificationsPage() {
       console.error("Error summary notifications:", err);
       setSummary({
         users: { all: 0, clients: 0, operators: 0, admins: 0 },
-        emailConfigured: false,
+        emailConfigured: true,
       });
     } finally {
       setLoading(false);
@@ -158,22 +172,28 @@ export default function NotificationsPage() {
     setResult(null);
   };
 
-  const sendTest = async () => {
+  const sendTest = () => {
     try {
       setTesting(true);
       setError("");
       setResult(null);
 
-      const { data } = await api.post("/notifications/test");
+      openGmailCompose({
+        to: "rivecorspa@gmail.com",
+        subject: "✅ Test Rivecor — Email funcionando",
+        body: `Hola,
+
+Este es un mensaje de prueba de Rivecor Eco Móvil 360.
+
+Si este correo se envía correctamente, el centro de comunicaciones está funcionando mediante Gmail.`,
+      });
 
       setResult({
         type: "success",
-        message: data?.message || "Email de prueba enviado correctamente.",
+        message: "Se abrió Gmail con el email de prueba listo para enviar.",
       });
     } catch (err) {
-      setError(
-        err.response?.data?.error || "No se pudo enviar el email de prueba."
-      );
+      setError("No se pudo abrir Gmail.");
     } finally {
       setTesting(false);
     }
@@ -195,20 +215,45 @@ export default function NotificationsPage() {
         return;
       }
 
-      const { data } = await api.post("/notifications/broadcast", {
-        target: form.target,
+      const { data } = await api.get(
+        `/notifications/emails?target=${form.target}`
+      );
+
+      const emails = data?.emails || [];
+
+      if (!emails.length) {
+        setError("No hay correos disponibles para este grupo.");
+        return;
+      }
+
+      const targetLabel =
+        TARGETS.find((t) => t.value === form.target)?.label ||
+        "Usuarios seleccionados";
+
+      const body = `${form.message}
+
+---
+Destinatarios seleccionados: ${targetLabel}
+Rivecor Eco Móvil 360`;
+
+      openGmailCompose({
+        bcc: emails.join(","),
         subject: form.subject.trim(),
-        message: form.message.trim(),
+        body,
       });
 
       setResult({
         type: "success",
-        message: `Comunicado enviado: ${data.sent}/${data.total}. Fallidos: ${data.failed}.`,
+        message: `Se abrió Gmail con ${emails.length} correo(s) cargados automáticamente.`,
       });
 
       setForm(emptyForm);
     } catch (err) {
-      setError(err.response?.data?.error || "No se pudo enviar el comunicado.");
+      console.error("Error obteniendo correos:", err);
+      setError(
+        err.response?.data?.error ||
+          "No se pudieron cargar los correos automáticamente."
+      );
     } finally {
       setSending(false);
     }
@@ -273,12 +318,6 @@ export default function NotificationsPage() {
         <StatCard label="Mecánicos" value={summary?.users?.operators || 0} icon={<Wrench size={18} />} />
         <StatCard label="Admins" value={summary?.users?.admins || 0} icon={<ShieldAlert size={18} />} />
       </div>
-
-      {!summary?.emailConfigured && (
-        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-300">
-          El email no está configurado en el backend. Revisa SMTP_USER y SMTP_PASS.
-        </div>
-      )}
 
       {error && (
         <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300">
@@ -351,9 +390,9 @@ export default function NotificationsPage() {
               ))}
             </select>
             <p className="mt-2 text-xs text-zinc-500">
-              Se enviará a aproximadamente{" "}
+              Se preparará el comunicado para{" "}
               <span className="font-bold text-yellow-300">{targetCount}</span>{" "}
-              usuario(s).
+              usuario(s). Gmail se abrirá con los correos cargados.
             </p>
           </div>
 
@@ -389,7 +428,7 @@ export default function NotificationsPage() {
             {sending ? (
               <>
                 <Loader2 size={16} className="animate-spin" />
-                Enviando comunicado...
+                Preparando comunicado...
               </>
             ) : (
               <>

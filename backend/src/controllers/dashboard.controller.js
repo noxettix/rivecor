@@ -11,6 +11,25 @@ function computeEquipmentStatus(equipment) {
   return "OK";
 }
 
+function getHealthScore(equipments) {
+  if (!equipments.length) return 100;
+
+  const ok = equipments.filter(
+    (eq) => computeEquipmentStatus(eq) === "OK"
+  ).length;
+
+  return Math.round((ok / equipments.length) * 100);
+}
+
+function getUserCompanyId(req) {
+  return (
+    req.user?.companyId ||
+    req.user?.company?.id ||
+    req.user?.companies?.id ||
+    null
+  );
+}
+
 const getDashboard = async (req, res) => {
   try {
     const [
@@ -137,7 +156,7 @@ const getDashboard = async (req, res) => {
         healthScore:
           equipments.length > 0
             ? Math.round((ok / equipments.length) * 100)
-            : 0,
+            : 100,
       },
 
       admin: {
@@ -197,4 +216,192 @@ const getDashboard = async (req, res) => {
   }
 };
 
-module.exports = { getDashboard };
+async function resolveClientCompanyId(req) {
+  if (req.user?.companyId) return req.user.companyId;
+  if (req.user?.company?.id) return req.user.company.id;
+
+  try {
+    const user = await prisma.users.findUnique({
+      where: { id: req.user.id },
+      select: {
+        id: true,
+        companyId: true,
+      },
+    });
+
+    if (user?.companyId) return user.companyId;
+  } catch (e) {
+    console.log("No se pudo leer companyId desde users:", e.message);
+  }
+
+  try {
+    const company = await prisma.companies.findFirst({
+      where: {
+        users: {
+          some: {
+            id: req.user.id,
+          },
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (company?.id) return company.id;
+  } catch (e) {
+    console.log("No se pudo resolver empresa por relación users:", e.message);
+  }
+
+  return null;
+}
+
+const getClientDashboard = async (req, res) => {
+  try {
+    const companyId = await resolveClientCompanyId(req);
+
+    console.log("CLIENT DASHBOARD USER:", {
+      id: req.user?.id,
+      email: req.user?.email,
+      role: req.user?.role,
+      companyId,
+    });
+
+    const whereEquipment = {
+      isActive: true,
+      ...(companyId
+        ? {
+            companies: {
+              id: companyId,
+            },
+          }
+        : {}),
+    };
+
+    const whereRequests = {
+      OR: [
+        {
+          users: {
+            id: req.user.id,
+          },
+        },
+        ...(companyId
+          ? [
+              {
+                equipments: {
+                  companies: {
+                    id: companyId,
+                  },
+                },
+              },
+            ]
+          : []),
+      ],
+      status: {
+        in: ["PENDING", "ACCEPTED", "EN_ROUTE", "SCHEDULED", "IN_PROGRESS"],
+      },
+    };
+
+    const [equipments, pendingRequests] = await Promise.all([
+      prisma.equipments.findMany({
+        where: whereEquipment,
+        include: {
+          tires: true,
+          companies: true,
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+
+      prisma.maintenance_requests.count({
+        where: whereRequests,
+      }),
+    ]);
+
+    let totalTires = 0;
+    let tiresCritical = 0;
+    const alerts = [];
+
+    const mappedEquipments = equipments.map((eq) => {
+      const tires = eq.tires || [];
+
+      const criticalTires = tires.filter(
+        (t) => t.status === "CRITICAL"
+      ).length;
+
+      const warningTires = tires.filter(
+        (t) => t.status === "WARNING"
+      ).length;
+
+      totalTires += tires.length;
+      tiresCritical += criticalTires;
+
+      for (const tire of tires) {
+        if (tire.status === "CRITICAL" || tire.status === "WARNING") {
+          alerts.push({
+            equipment: eq.name,
+            code: eq.code,
+            tireId: tire.id,
+            tirePosition: tire.position,
+            message: `${eq.code || eq.name}: neumático ${tire.position} en estado ${tire.status}`,
+            status: tire.status,
+            level: tire.status,
+            depth: tire.currentDepth,
+            pressure: tire.pressure,
+          });
+        }
+      }
+
+      return {
+        id: eq.id,
+        name: eq.name,
+        code: eq.code,
+        type: eq.type,
+        brand: eq.brand,
+        model: eq.model,
+        location: eq.location,
+        company: eq.companies || null,
+        healthScore:
+          tires.length > 0
+            ? Math.round(
+                ((tires.length - criticalTires - warningTires * 0.5) /
+                  tires.length) *
+                  100
+              )
+            : 100,
+        overallStatus: computeEquipmentStatus(eq),
+        tiresCount: tires.length,
+        criticalTires,
+        warningTires,
+        tires,
+      };
+    });
+
+    console.log("CLIENT DASHBOARD RESULT:", {
+      companyId,
+      equipments: equipments.length,
+      totalTires,
+      tiresCritical,
+      pendingRequests,
+    });
+
+    res.json({
+      summary: {
+        healthScore: getHealthScore(equipments),
+        totalEquipments: equipments.length,
+        totalTires,
+        tiresCritical,
+        pendingRequests,
+      },
+      equipments: mappedEquipments,
+      alerts: alerts.slice(0, 10),
+    });
+  } catch (e) {
+    console.error("client dashboard error:", e);
+    res.status(500).json({ error: e.message });
+  }
+};
+
+module.exports = {
+  getDashboard,
+  getClientDashboard,
+};
