@@ -199,65 +199,51 @@ Si este correo se envía correctamente, el centro de comunicaciones está funcio
     }
   };
 
-  const sendBroadcast = async () => {
-    try {
-      setSending(true);
-      setError("");
-      setResult(null);
+  const sendBroadcast = () => {
+  try {
+    setSending(true);
+    setError("");
+    setResult(null);
 
-      if (!form.subject.trim()) {
-        setError("El asunto es obligatorio.");
-        return;
-      }
+    if (!form.subject.trim()) {
+      setError("El asunto es obligatorio.");
+      return;
+    }
 
-      if (!form.message.trim()) {
-        setError("El mensaje es obligatorio.");
-        return;
-      }
+    if (!form.message.trim()) {
+      setError("El mensaje es obligatorio.");
+      return;
+    }
 
-      const { data } = await api.get(
-        `/notifications/emails?target=${form.target}`
-      );
+    // 👉 LISTA FIJA TEMPORAL
+    const emails = [
+      "felipe.nocetti@gmail.com",
+      "rivecorspa@gmail.com",
+    ];
 
-      const emails = data?.emails || [];
-
-      if (!emails.length) {
-        setError("No hay correos disponibles para este grupo.");
-        return;
-      }
-
-      const targetLabel =
-        TARGETS.find((t) => t.value === form.target)?.label ||
-        "Usuarios seleccionados";
-
-      const body = `${form.message}
+    const body = `${form.message}
 
 ---
-Destinatarios seleccionados: ${targetLabel}
 Rivecor Eco Móvil 360`;
 
-      openGmailCompose({
-        bcc: emails.join(","),
-        subject: form.subject.trim(),
-        body,
-      });
+    const url = `mailto:?bcc=${emails.join(",")}&subject=${encodeURIComponent(
+      form.subject
+    )}&body=${encodeURIComponent(body)}`;
 
-      setResult({
-        type: "success",
-        message: `Se abrió Gmail con ${emails.length} correo(s) cargados automáticamente.`,
-      });
+    window.location.href = url;
 
-      setForm(emptyForm);
-    } catch (err) {
-      console.error("Error obteniendo correos:", err);
-      setError(
-        err.response?.data?.error ||
-          "No se pudieron cargar los correos automáticamente."
-      );
-    } finally {
-      setSending(false);
-    }
-  };
+    setResult({
+      type: "success",
+      message: `Correo preparado con ${emails.length} destinatarios.`,
+    });
+
+    setForm(emptyForm);
+  } catch (err) {
+    setError("Error inesperado.");
+  } finally {
+    setSending(false);
+  }
+};
 
   if (loading) {
     return (
@@ -420,23 +406,7 @@ Rivecor Eco Móvil 360`;
             />
           </div>
 
-          <button
-            onClick={sendBroadcast}
-            disabled={sending}
-            className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-yellow-400 px-5 py-3 text-sm font-black text-black hover:bg-yellow-300 disabled:opacity-60"
-          >
-            {sending ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                Preparando comunicado...
-              </>
-            ) : (
-              <>
-                <Send size={16} />
-                Enviar comunicado
-              </>
-            )}
-          </button>
+          
         </div>
 
         <div className="rounded-3xl border border-zinc-800 bg-zinc-900/80 p-6 space-y-4">
