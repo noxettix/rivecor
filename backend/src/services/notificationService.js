@@ -39,14 +39,14 @@ async function sendEmail({ to, subject, html }) {
     console.log("✅ Email enviado:", info.messageId);
     return true;
   } catch (err) {
-    console.error("❌ Email error:", {
+    console.error("❌ Email error real:", {
       message: err.message,
       code: err.code,
       command: err.command,
       response: err.response,
     });
 
-    throw err;
+    return false;
   }
 }
 

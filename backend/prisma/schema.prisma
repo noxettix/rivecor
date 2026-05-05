@@ -384,6 +384,8 @@ model users {
   mechanics            mechanics?
   quotes               quotes[]
   companies            companies?             @relation(fields: [companyId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_users_company")
+resetPasswordTokenHash String?
+resetPasswordExpiresAt DateTime? @db.Timestamptz(6)
 
   @@index([companyId], map: "idx_users_company")
   @@index([email], map: "idx_users_email")
