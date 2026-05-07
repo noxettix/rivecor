@@ -217,7 +217,6 @@ Si este correo se envía correctamente, el centro de comunicaciones está funcio
 
     // 👉 LISTA FIJA TEMPORAL
     const emails = [
-      "felipe.nocetti@gmail.com",
       "rivecorspa@gmail.com",
     ];
 
